@@ -208,7 +208,17 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
     if (p->fd < 0) return;
     struct input_event ev[32];
     ssize_t n;
+    /* one-shot diag: log fd + first non-trivial read */
+    static int diag_logged[32] = {0};
+    int slot = -1;
+    for (int j = 0; j < 32; j++) if (&_rawpads[j] == p) { slot = j; break; }
+
     while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
+        if (slot >= 0 && !diag_logged[slot]) {
+            fprintf(stderr, "[JOY-RAW] FIRST DRAIN HIT joy#%d fd=%d bytes=%zd\n", slot, p->fd, n);
+            fflush(stderr);
+            diag_logged[slot] = 1;
+        }
         int k = n / sizeof(ev[0]);
         for (int i = 0; i < k; i++) {
             struct input_event *e = &ev[i];
