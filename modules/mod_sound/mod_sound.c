@@ -402,8 +402,9 @@ static int sound_init()
 #endif
         spec.channels = audio_channels;
 
-        /* Open the audio device */
-        if ( Mix_OpenAudio( 0, &spec ) )
+        /* Open the audio device. SDL2_mixer convention: 0 = success, -1 = fail.
+         * Our SDL3 compat shim follows same convention, so ">= 0" test is correct. */
+        if ( Mix_OpenAudio( 0, &spec ) >= 0 )
         {
             GLODWORD( mod_sound, SOUND_CHANNELS ) <= 32 ? Mix_AllocateChannels( GLODWORD( mod_sound, SOUND_CHANNELS ) ) : Mix_AllocateChannels( 32 ) ;
             /* SDL3_mixer: Mix_QuerySpec signature changed; optional — we already

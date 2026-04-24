@@ -30,6 +30,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "bgdrtm.h"
 
@@ -347,32 +348,77 @@ int gr_set_mode( int width, int height, int depth )
 
     // Use the new & fancy SDL 2 routines
     if(!window && !renderer) {
-        sdl_flags = 0 /* SDL_WINDOW_SHOWN removed in SDL3 — visible by default */;
+        /* SDL3: Mali FBDEV driver needs SDL_WINDOW_OPENGL for GLES2 renderer to attach.
+         * Hint the opengles2 backend explicitly so CreateRenderer picks it.
+         * Also: SDL3 default libGLESv2.so.2 dlopen fails to resolve libMali.so on some
+         * EmuELEC/NextOS Amlogic setups. Force the hint to point at libMali.so
+         * directly when the Mali FBDEV driver is active, unless the user overrode it. */
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
+        {
+            const char *vd = SDL_GetCurrentVideoDriver();
+            if (vd && SDL_strcmp(vd, "mali") == 0) {
+                const char *candidates[] = {
+                    "/usr/lib32/libMali.so",
+                    "/usr/lib/libMali.so",
+                    NULL
+                };
+                int i;
+                for (i = 0; candidates[i]; i++) {
+                    if (access(candidates[i], R_OK) == 0) {
+                        if (!SDL_getenv("SDL_OPENGL_LIBRARY"))
+                            SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, candidates[i]);
+                        if (!SDL_getenv("SDL_EGL_LIBRARY"))
+                            SDL_SetHint(SDL_HINT_EGL_LIBRARY, candidates[i]);
+                        SDL_Log("Mali FBDEV: hinting GL/EGL lib at %s", candidates[i]);
+                        break;
+                    }
+                }
+            }
+        }
+        sdl_flags = SDL_WINDOW_OPENGL;
         if (frameless) {
             sdl_flags |= SDL_WINDOW_BORDERLESS;
         } else {
         }
+        /* Mali FBDEV driver only supports one mode (native framebuffer size).
+         * Force fullscreen there so the small game surface scales up via
+         * SDL_SetRenderLogicalPresentation below instead of rendering at native
+         * pixel size into a huge framebuffer. */
+        {
+            const char *vd = SDL_GetCurrentVideoDriver();
+            if (vd && SDL_strcmp(vd, "mali") == 0) full_screen = 1;
+        }
         if (full_screen) {
             sdl_flags |= SDL_WINDOW_FULLSCREEN;
+            /* size 0,0 → SDL3 uses display native mode for fullscreen */
+            surface_width = 0;
+            surface_height = 0;
         }
         if (grab_input) {
             sdl_flags |= SDL_WINDOW_MOUSE_GRABBED;
         }
         /* SDL3: SDL_CreateWindow takes 4 args (no x/y); position via SDL_SetWindowPosition */
-        window = SDL_CreateWindow(apptitle, surface_width, surface_height, sdl_flags);
-        if(window) {
-            /* SDL3: SDL_CreateRenderer takes 2 args (name can be NULL for default) */
-            renderer = SDL_CreateRenderer(window, NULL);
-            if (renderer && waitvsync) {
-                SDL_SetRenderVSync(renderer, 1);
-            }
-            /* Store the renderer resolution (SDL3: SDL_GetCurrentRenderOutputSize) */
-            SDL_GetCurrentRenderOutputSize(renderer, &renderer_width, &renderer_height);
-        }
-        if (!window || !renderer) {
-            SDL_Log("Error creating window and/or renderer (%s)", SDL_GetError());
+        SDL_Log("video driver: %s", SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "(none)");
+        window = SDL_CreateWindow(apptitle ? apptitle : "bennugd", surface_width, surface_height, sdl_flags);
+        if (!window) {
+            SDL_Log("SDL_CreateWindow(%dx%d flags=0x%x) failed: %s", surface_width, surface_height, sdl_flags, SDL_GetError());
             return -1;
         }
+        /* SDL3: SDL_CreateRenderer takes 2 args (name can be NULL for default).
+         * Try default first, fall back to software if the GL/GLES backend isn't usable. */
+        renderer = SDL_CreateRenderer(window, NULL);
+        if (!renderer) {
+            SDL_Log("SDL_CreateRenderer(default) failed: %s — trying software", SDL_GetError());
+            renderer = SDL_CreateRenderer(window, "software");
+        }
+        if (!renderer) {
+            SDL_Log("SDL_CreateRenderer(software) also failed: %s", SDL_GetError());
+            SDL_DestroyWindow(window); window = NULL;
+            return -1;
+        }
+        SDL_Log("renderer backend: %s", SDL_GetRendererName(renderer) ? SDL_GetRendererName(renderer) : "(unknown)");
+        if (waitvsync) SDL_SetRenderVSync(renderer, 1);
+        SDL_GetCurrentRenderOutputSize(renderer, &renderer_width, &renderer_height);
     }
 
     // Clear the screen

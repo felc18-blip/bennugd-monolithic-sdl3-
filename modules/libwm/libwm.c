@@ -88,52 +88,42 @@ DLVARFIXUP  __bgdexport( libwm, globals_fixup )[] =
 
 static void wm_events()
 {
-    return;
     SDL_Event e ;
-    
-    /* Procesa los eventos de ventana pendientes */
 
+    /* Procesa los eventos de ventana pendientes */
     GLODWORD( libwm, EXIT_STATUS ) = 0 ;
 
-    /* Handle the plethora of events different systems can produce here */
-    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_QUIT, SDL_EVENT_WINDOW_FIRST ) > 0 )
+    /* SDL3: window subtypes are discrete event types, not nested under a single
+     * SDL_EVENT_WINDOW_FIRST. Peep the whole window+quit range and dispatch on e.type. */
+    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_QUIT, SDL_EVENT_WINDOW_LAST ) > 0 )
     {
         switch ( e.type )
         {
             case SDL_EVENT_QUIT:
-                /* UPDATE  exit status... initilized each frame */
                 GLODWORD( libwm, EXIT_STATUS ) = 1 ;
                 break ;
-            case SDL_EVENT_WINDOW_FIRST:
-                switch (e.window.type) {
-                    case SDL_EVENT_WINDOW_MINIMIZED:
-                        GLODWORD(libwm, WINDOW_STATUS) = 0;
-                        break;
-                    case SDL_EVENT_WINDOW_RESTORED:
-                        gr_set_mode(screen->w, screen->h, SDL_BITSPERPIXEL(screen->format));
-                        GLODWORD(libwm, WINDOW_STATUS) = 1;
-                        break;
-                    case SDL_EVENT_WINDOW_MOUSE_ENTER:
-                        GLODWORD(libwm, MOUSE_STATUS) = 1;
-                        break;
-                    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
-                        GLODWORD(libwm, MOUSE_STATUS) = 0;
-                        break;
-                    case SDL_EVENT_WINDOW_HIDDEN:
-                        GLODWORD(libwm, WINDOW_STATUS) = 0;
-                        break;
-                    case SDL_EVENT_WINDOW_SHOWN:
-                        GLODWORD(libwm, WINDOW_STATUS) = 1;
-                        break;
-                    case SDL_EVENT_WINDOW_FOCUS_LOST:
-                        GLODWORD(libwm, FOCUS_STATUS) = 0;
-                        break;
-                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
-                        GLODWORD(libwm, FOCUS_STATUS) = 1;
-                        break;
-                }
-            
-            /* SDL_SYSWMEVENT removed in SDL3 — WM-specific events gone */
+            case SDL_EVENT_WINDOW_MINIMIZED:
+            case SDL_EVENT_WINDOW_HIDDEN:
+                GLODWORD(libwm, WINDOW_STATUS) = 0;
+                break;
+            case SDL_EVENT_WINDOW_RESTORED:
+            case SDL_EVENT_WINDOW_SHOWN:
+                GLODWORD(libwm, WINDOW_STATUS) = 1;
+                break;
+            case SDL_EVENT_WINDOW_MOUSE_ENTER:
+                GLODWORD(libwm, MOUSE_STATUS) = 1;
+                break;
+            case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+                GLODWORD(libwm, MOUSE_STATUS) = 0;
+                break;
+            case SDL_EVENT_WINDOW_FOCUS_LOST:
+                GLODWORD(libwm, FOCUS_STATUS) = 0;
+                break;
+            case SDL_EVENT_WINDOW_FOCUS_GAINED:
+                GLODWORD(libwm, FOCUS_STATUS) = 1;
+                break;
+            default:
+                break;
         }
     }
 }
