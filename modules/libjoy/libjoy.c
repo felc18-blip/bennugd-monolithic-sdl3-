@@ -281,6 +281,8 @@ int libjoy_name( int joy )
 
 int libjoy_select( int joy )
 {
+    fprintf(stderr, "[JOY-RAW] libjoy_select(%d) [_max_joys=%d]\n", joy, _max_joys);
+    fflush(stderr);
     return ( _selected_joystick = joy );
 }
 
@@ -328,6 +330,12 @@ int libjoy_axes( void )
 
 int libjoy_get_button( int button )
 {
+    static int call_count = 0;
+    if ((call_count++ % 240) == 0) {
+        fprintf(stderr, "[JOY-RAW] libjoy_get_button(%d) sel=%d max=%d\n",
+            button, _selected_joystick, _max_joys);
+        fflush(stderr);
+    }
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
 #ifdef TARGET_CAANOO
