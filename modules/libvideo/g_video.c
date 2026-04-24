@@ -336,16 +336,16 @@ int gr_set_mode( int width, int height, int depth )
 
     // Use the new & fancy SDL 2 routines
     if(!window && !renderer) {
-        sdl_flags = SDL_WINDOW_SHOWN;
+        sdl_flags = 0 /* SDL_WINDOW_SHOWN removed in SDL3 — visible by default */;
         if (frameless) {
             sdl_flags |= SDL_WINDOW_BORDERLESS;
         } else {
         }
         if (full_screen) {
-            sdl_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+            sdl_flags |= SDL_WINDOW_FULLSCREEN;
         }
         if (grab_input) {
-            sdl_flags |= SDL_WINDOW_INPUT_GRABBED;
+            sdl_flags |= SDL_WINDOW_MOUSE_GRABBED;
         }
         window = SDL_CreateWindow(apptitle,
                                   SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,

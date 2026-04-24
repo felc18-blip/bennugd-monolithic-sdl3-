@@ -79,7 +79,7 @@ const Uint8 * keystate = NULL;        /* Pointer to key states */
 
 /* ---------------------------------------------------------------------- */
 
-static int sdl_equiv[SDL_NUM_SCANCODES+1] ;
+static int sdl_equiv[SDL_SCANCODE_COUNT+1] ;
 
 static int equivs[] =
 {
@@ -458,20 +458,20 @@ static void process_key_events()
         GLODWORD( libkey,  SCANCODE )  = 0 ;
     }
 
-    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_KEYDOWN, SDL_KEYUP ) > 0 )
+    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP ) > 0 )
     {
         switch ( e.type )
         {
-            case SDL_KEYDOWN:
+            case SDL_EVENT_KEY_DOWN:
                 ignore_key = 0;
                 /* KeyDown HotKey */
                 if ( hotkey_count )
                     for ( n = 0; n < hotkey_count; n++ )
                     {
-                        if ((( hotkey_list[n].mod & e.key.keysym.mod ) == hotkey_list[n].mod ) &&
-                                ( !hotkey_list[n].sym || ( hotkey_list[n].sym == e.key.keysym.sym ) ) )
+                        if ((( hotkey_list[n].mod & e.key.mod ) == hotkey_list[n].mod ) &&
+                                ( !hotkey_list[n].sym || ( hotkey_list[n].sym == e.key.key ) ) )
                         {
-                            ignore_key = hotkey_list[n].callback( e.key.keysym );
+                            ignore_key = hotkey_list[n].callback( e.key.key );
                         }
                     }
                 /* KeyDown HotKey */
@@ -479,19 +479,19 @@ static void process_key_events()
                 if ( ignore_key ) break ;
 
                 /* Almacena la pulsación de la tecla */
-                k = sdl_equiv[e.key.keysym.scancode];
+                k = sdl_equiv[e.key.scancode];
 
-                m = e.key.keysym.mod ;
+                m = e.key.mod ;
 
                 if ( !keypress )
                 {
                     GLODWORD( libkey,  SCANCODE )  = k ;
-                    if ( e.key.keysym.scancode )
+                    if ( e.key.scancode )
                     {
-                        asc = win_to_dos[e.key.keysym.scancode & 0xFF] ;
+                        asc = win_to_dos[e.key.scancode & 0xFF] ;
 
                         /* ascii mayusculas */
-                        if ( asc >= 'a' && asc <= 'z' && ( m & KMOD_LSHIFT || m & KMOD_RSHIFT || keystate[SDL_SCANCODE_CAPSLOCK] ) )
+                        if ( asc >= 'a' && asc <= 'z' && ( m & SDL_KMOD_LSHIFT || m & SDL_KMOD_RSHIFT || keystate[SDL_SCANCODE_CAPSLOCK] ) )
                             asc -= 0x20 ;
                     }
                     else
@@ -505,12 +505,12 @@ static void process_key_events()
                 else
                 {
                     keyring[keyring_tail].scancode = k ;
-                    if ( e.key.keysym.scancode )
+                    if ( e.key.scancode )
                     {
-                        asc = win_to_dos[e.key.keysym.scancode & 0x7F] ;
+                        asc = win_to_dos[e.key.scancode & 0x7F] ;
 
                         /*ascii mayusculas */
-                        if ( asc >= 'a' && asc <= 'z' && ( m & KMOD_LSHIFT || m & KMOD_RSHIFT || keystate[SDL_SCANCODE_CAPSLOCK] ) )
+                        if ( asc >= 'a' && asc <= 'z' && ( m & SDL_KMOD_LSHIFT || m & SDL_KMOD_RSHIFT || keystate[SDL_SCANCODE_CAPSLOCK] ) )
                             asc -= 0x20 ;
                     }
                     else
@@ -523,7 +523,7 @@ static void process_key_events()
 
                 break ;
 
-            case SDL_KEYUP:
+            case SDL_EVENT_KEY_UP:
                 /* Do nothing, Bennu is key_up unsensitive */
                 break ;
         }
@@ -538,21 +538,21 @@ static void process_key_events()
 
     /* Now actualized every frame... */
     GLODWORD( libkey,  SHIFTSTATUS ) =
-        ( ( m & KMOD_RSHIFT ) ? STAT_RSHIFT : 0 ) |
-        ( ( m & KMOD_LSHIFT ) ? STAT_LSHIFT : 0 ) |
+        ( ( m & SDL_KMOD_RSHIFT ) ? STAT_RSHIFT : 0 ) |
+        ( ( m & SDL_KMOD_LSHIFT ) ? STAT_LSHIFT : 0 ) |
 
-        ( ( m & KMOD_CTRL   ) ? STAT_CTRL   : 0 ) |
-        ( ( m & KMOD_ALT    ) ? STAT_ALT    : 0 ) |
+        ( ( m & SDL_KMOD_CTRL   ) ? STAT_CTRL   : 0 ) |
+        ( ( m & SDL_KMOD_ALT    ) ? STAT_ALT    : 0 ) |
 
-        ( ( m & KMOD_RCTRL  ) ? STAT_RCTRL  : 0 ) |
-        ( ( m & KMOD_LCTRL  ) ? STAT_LCTRL  : 0 ) |
+        ( ( m & SDL_KMOD_RCTRL  ) ? STAT_RCTRL  : 0 ) |
+        ( ( m & SDL_KMOD_LCTRL  ) ? STAT_LCTRL  : 0 ) |
 
-        ( ( m & KMOD_RALT   ) ? STAT_RALT   : 0 ) |
-        ( ( m & KMOD_LALT   ) ? STAT_LALT   : 0 ) |
+        ( ( m & SDL_KMOD_RALT   ) ? STAT_RALT   : 0 ) |
+        ( ( m & SDL_KMOD_LALT   ) ? STAT_LALT   : 0 ) |
 
-        ( ( m & KMOD_NUM    ) ? STAT_NUM    : 0 ) |
-        ( ( m & KMOD_CAPS   ) ? STAT_CAPS   : 0 ) |
-        ( ( m & KMOD_SHIFT  ) ? STAT_SHIFT  : 0 ) ;
+        ( ( m & SDL_KMOD_NUM    ) ? STAT_NUM    : 0 ) |
+        ( ( m & SDL_KMOD_CAPS   ) ? STAT_CAPS   : 0 ) |
+        ( ( m & SDL_KMOD_SHIFT  ) ? STAT_SHIFT  : 0 ) ;
 }
 
 /* ---------------------------------------------------------------------- */

@@ -4,8 +4,8 @@ cmake_minimum_required(VERSION 3.4)
 add_subdirectory(bgdrtm)
 # Required stuff
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${bgdi_SOURCE_DIR}/../include")
-find_package(SDL2 2.0.4 REQUIRED)
-find_package(SDL2_Mixer REQUIRED)
+find_package(SDL3 3.0.0 REQUIRED CONFIG)
+find_package(SDL3_mixer REQUIRED CONFIG)
 find_package(ZLIB REQUIRED)
 find_package(PNG REQUIRED)
 find_package(OGG REQUIRED)
@@ -41,8 +41,8 @@ include(compiler_flags)
 # Link the executable to the libraries
 target_link_libraries(${PROJECT_NAME}
                       bgdrtm
-                      ${SDL2_LIBRARY}
-                      ${SDL2_MIXER_LIBRARIES}
+                      SDL3::SDL3
+                      SDL3_mixer::SDL3_mixer
                       ${ZLIB_LIBRARIES}
                       ${PNG_LIBRARIES}
                       ${TRE_LIBRARY}

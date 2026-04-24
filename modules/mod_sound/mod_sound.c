@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -38,7 +38,7 @@
 
 #include <SDL3/SDL.h>
 
-#include "SDL_mixer.h"
+#include <SDL3_mixer/SDL_mixer.h>
 
 #include "files.h"
 #include "xstrings.h"
@@ -83,7 +83,7 @@ char * __bgdexport( mod_sound, globals_def ) =
 
 DLVARFIXUP  __bgdexport( mod_sound, globals_fixup )[] =
 {
-    /* Nombre de variable global, puntero al dato, tamaño del elemento, cantidad de elementos */
+    /* Nombre de variable global, puntero al dato, tamaï¿½o del elemento, cantidad de elementos */
     { "sound_freq", NULL, -1, -1 },
     { "sound_mode", NULL, -1, -1 },
     { "sound_channels", NULL, -1, -1 },
@@ -91,52 +91,53 @@ DLVARFIXUP  __bgdexport( mod_sound, globals_fixup )[] =
 };
 
 /* ------------------------------------- */
-/* Interfaz SDL_RWops Bennu              */
+/* Interfaz SDL_IOStream (SDL3) Bennu     */
 /* ------------------------------------- */
 
-static Sint64 SDLCALL __modsound_seek_cb( SDL_RWops *context, Sint64 offset, int whence )
+static Sint64 SDLCALL __modsound_size_cb( void *userdata )
 {
-    if ( file_seek( context->hidden.unknown.data1, offset, whence ) < 0 ) return ( -1 );
-    return( file_pos( context->hidden.unknown.data1 ) );
-    //    return ( file_seek( context->hidden.unknown.data1, offset, whence ) );
+    /* BGD files nÃ£o expÃµem tamanho trivialmente; retorna -1 (unknown) */
+    (void) userdata;
+    return -1;
 }
 
-static size_t SDLCALL __modsound_read_cb( SDL_RWops *context, void *ptr, size_t size, size_t maxnum )
+static Sint64 SDLCALL __modsound_seek_cb( void *userdata, Sint64 offset, SDL_IOWhence whence )
 {
-    int ret = file_read( context->hidden.unknown.data1, ptr, size * maxnum );
-    if ( ret > 0 ) ret /= size;
-    return( ret );
+    if ( file_seek( (file *) userdata, offset, (int) whence ) < 0 ) return ( -1 );
+    return( file_pos( (file *) userdata ) );
 }
 
-static size_t SDLCALL __modsound_write_cb( SDL_RWops *context, const void *ptr, size_t size, size_t num )
+static size_t SDLCALL __modsound_read_cb( void *userdata, void *ptr, size_t size, SDL_IOStatus *status )
 {
-    int ret = file_write( context->hidden.unknown.data1, ( void * )ptr, size * num );
-    if ( ret > 0 ) ret /= size;
-    return( ret );
+    int ret = file_read( (file *) userdata, ptr, size );
+    if ( ret < 0 ) { if (status) *status = SDL_IO_STATUS_ERROR; return 0; }
+    if ( ret == 0 ) { if (status) *status = SDL_IO_STATUS_EOF; return 0; }
+    return( (size_t) ret );
 }
 
-static int SDLCALL __modsound_close_cb( SDL_RWops *context )
+static size_t SDLCALL __modsound_write_cb( void *userdata, const void *ptr, size_t size, SDL_IOStatus *status )
 {
-    if ( context )
-    {
-        file_close( context->hidden.unknown.data1 );
-        SDL_FreeRW( context );
-    }
-    return( 0 );
+    int ret = file_write( (file *) userdata, (void *) ptr, size );
+    if ( ret < 0 ) { if (status) *status = SDL_IO_STATUS_ERROR; return 0; }
+    return( (size_t) ret );
 }
 
-static SDL_RWops *SDL_RWFromBGDFP( file *fp )
+static bool SDLCALL __modsound_close_cb( void *userdata )
 {
-    SDL_RWops *rwops = SDL_AllocRW();
-    if ( rwops != NULL )
-    {
-        rwops->seek = __modsound_seek_cb;
-        rwops->read = __modsound_read_cb;
-        rwops->write = __modsound_write_cb;
-        rwops->close = __modsound_close_cb;
-        rwops->hidden.unknown.data1 = fp;
-    }
-    return( rwops );
+    if ( userdata ) file_close( (file *) userdata );
+    return true;
+}
+
+static SDL_IOStream *SDL_RWFromBGDFP( file *fp )
+{
+    SDL_IOStreamInterface iface;
+    SDL_INIT_INTERFACE( &iface );
+    iface.size  = __modsound_size_cb;
+    iface.seek  = __modsound_seek_cb;
+    iface.read  = __modsound_read_cb;
+    iface.write = __modsound_write_cb;
+    iface.close = __modsound_close_cb;
+    return SDL_OpenIO( &iface, fp );
 }
 
 /* --------------------------------------------------------------------------- */
@@ -157,10 +158,9 @@ static SDL_RWops *SDL_RWFromBGDFP( file *fp )
 
 static int sound_init()
 {
+    SDL_AudioSpec spec;
     int audio_rate;
-    Uint16 audio_format;
     int audio_channels;
-    int audio_buffers;
     int audio_mix_channels;
 
     if ( !audio_initialized )
@@ -176,25 +176,27 @@ static int sound_init()
         else
             audio_rate = 11025;
 
-#ifdef TARGET_WII
-        /* WII uses a powerpc architecture, which is big-endian */
-        audio_format = AUDIO_S16MSB;
-        audio_rate = 48000;
-#else
-        audio_format = AUDIO_S16;
-#endif
         audio_channels = GLODWORD( mod_sound, SOUND_MODE ) + 1;
+
+        /* SDL3_mixer 3.x: Mix_OpenAudio takes a device ID + AudioSpec pointer.
+         * Pass 0 for default device and NULL to use the mixer's preferred spec,
+         * OR pass our own spec to request sample rate/format/channels. */
+        spec.freq     = audio_rate;
 #ifdef TARGET_WII
-        audio_buffers = 1024;
+        spec.format   = SDL_AUDIO_S16BE;
+        spec.freq     = 48000;
 #else
-        audio_buffers = 1024 * audio_rate / 22050;
+        spec.format   = SDL_AUDIO_S16LE;
 #endif
+        spec.channels = audio_channels;
 
         /* Open the audio device */
-        if ( Mix_OpenAudio( audio_rate, audio_format, audio_channels, audio_buffers ) >= 0 )
+        if ( Mix_OpenAudio( 0, &spec ) )
         {
             GLODWORD( mod_sound, SOUND_CHANNELS ) <= 32 ? Mix_AllocateChannels( GLODWORD( mod_sound, SOUND_CHANNELS ) ) : Mix_AllocateChannels( 32 ) ;
-            Mix_QuerySpec( &audio_rate, &audio_format, &audio_channels );
+            /* SDL3_mixer: Mix_QuerySpec signature changed; optional â€” we already
+             * know spec, skip if not strictly needed. Pre-SDL3 code used it to
+             * fill audio_rate/format/channels; we keep our requested values. */
             audio_mix_channels = Mix_AllocateChannels( -1 ) ;
             GLODWORD( mod_sound, SOUND_CHANNELS ) = audio_mix_channels ;
 
@@ -227,7 +229,7 @@ static void sound_close()
 {
     if ( !audio_initialized ) return;
 
-    //falta por comprobar que todo esté descargado
+    //falta por comprobar que todo estï¿½ descargado
 
     Mix_CloseAudio();
 
@@ -265,7 +267,7 @@ static int load_song( const char * filename )
 
     if ( !( fp = file_open( filename, "rb0" ) ) ) return ( 0 );
 
-    if ( !( music = Mix_LoadMUS_RW( SDL_RWFromBGDFP( fp ), 0 ) ) )
+    if ( !( music = Mix_LoadMUS_IO( SDL_RWFromBGDFP( fp ), 0 ) ) )
     {
         file_close( fp );
         fprintf( stderr, "Couldn't load %s: %s\n", filename, SDL_GetError() );
@@ -298,7 +300,7 @@ static int play_song( int id, int loops )
     if ( audio_initialized && id )
     {
         int result = Mix_PlayMusic(( Mix_Music * )id, loops );
-        if ( result == -1 ) fprintf( stderr, "%s", Mix_GetError() );
+        if ( result == -1 ) fprintf( stderr, "%s", SDL_GetError() );
         return result;
     }
 
@@ -522,7 +524,7 @@ static int load_wav( const char * filename )
 
     if ( !( fp = file_open( filename, "rb0" ) ) ) return ( 0 );
 
-    if ( !( music = Mix_LoadWAV_RW( SDL_RWFromBGDFP( fp ), 1 ) ) )
+    if ( !( music = Mix_LoadWAV_IO( SDL_RWFromBGDFP( fp ), 1 ) ) )
     {
         file_close( fp );
         fprintf( stderr, "Couldn't load %s: %s\n", filename, SDL_GetError() );

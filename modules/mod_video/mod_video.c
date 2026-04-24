@@ -101,7 +101,7 @@ static int modvideo_set_fps( INSTANCE * my, int * params )
 
 static int get_sdl_flags( int flags )
 {
-    int sdl_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS;
+    int sdl_flags = 0 /* SDL_WINDOW_SHOWN removed in SDL3 — visible by default */ | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS;
     sdl_flags |= ( flags & MODE_FULLSCREEN ) ? SDL_WINDOW_FULLSCREEN : 0;
     sdl_flags |= ( flags & MODE_FRAMELESS ) ? SDL_WINDOW_BORDERLESS : 0;
 

@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -50,7 +50,7 @@ static int modtime_get_timer( INSTANCE * my, int * params )
 }
 
 /* --------------------------------------------------------------------------- */
-/* Hora del día                                                                */
+/* Hora del dï¿½a                                                                */
 
 static int modtime_time( INSTANCE * my, int * params )
 {
@@ -228,18 +228,14 @@ DLSYSFUNCS __bgdexport( mod_time, functions_exports )[] =
 
 void __bgdexport( mod_time, module_initialize )()
 {
-#ifndef TARGET_DINGUX_A320
-    if ( !SDL_WasInit( SDL_INIT_TIMER ) ) SDL_InitSubSystem( SDL_INIT_TIMER );
-#endif
+    /* SDL3: timer subsystem is always available, no explicit init needed */
 }
 
 /* --------------------------------------------------------------------------- */
 
 void __bgdexport( mod_time, module_finalize )()
 {
-#ifndef TARGET_DINGUX_A320
-    if ( SDL_WasInit( SDL_INIT_TIMER ) ) SDL_QuitSubSystem( SDL_INIT_TIMER );
-#endif
+    /* SDL3: timer subsystem never needs explicit shutdown */
 }
 
 /* --------------------------------------------------------------------------- */

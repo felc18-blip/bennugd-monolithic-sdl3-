@@ -2,7 +2,7 @@ project(bgdc C)
 cmake_minimum_required(VERSION 3.4)
 # Required stuff
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${bgdc_SOURCE_DIR}/../include")
-find_package(SDL2 2.0.4 REQUIRED)
+find_package(SDL3 3.0.0 REQUIRED CONFIG)
 find_package(ZLIB REQUIRED)
 # Preprocessor macros
 add_definitions(-D__BGDC__)
@@ -65,7 +65,7 @@ include_directories(${bgdc_SOURCE_DIR}/../../../core/bgdc/include
                     ${bgdc_SOURCE_DIR}/../../../modules/mod_blendop/
                     ${bgdc_SOURCE_DIR}/../../../modules/mod_m7/
                     ${bgdc_SOURCE_DIR}/../../../modules/mod_flic/
-                    ${SDL2_INCLUDE_DIR}
+                    
                     ${ZLIB_INCLUDE_DIRS})
 
 # In windows? Add an icon and link agains shlwapi
