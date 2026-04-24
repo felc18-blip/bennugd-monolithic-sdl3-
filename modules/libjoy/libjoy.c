@@ -528,7 +528,18 @@ void  __bgdexport( libjoy, module_initialize )()
         for ( i = 0; i < _max_joys; i++ )
         {
             _joysticks[i] = SDL_OpenJoystick( ids[i] ) ;
-            if ( !_joysticks[ i ] ) printf( "[JOY] Failed to open joystick '%i'", i );
+            if ( !_joysticks[ i ] ) {
+                fprintf(stderr, "[JOY] Failed to open joystick %d: %s\n", i, SDL_GetError());
+                fflush(stderr);
+            } else {
+                int nbtn = SDL_GetNumJoystickButtons(_joysticks[i]);
+                int nax  = SDL_GetNumJoystickAxes(_joysticks[i]);
+                int nhat = SDL_GetNumJoystickHats(_joysticks[i]);
+                fprintf(stderr, "[JOY] opened #%d: %s (buttons=%d axes=%d hats=%d)\n",
+                    i, SDL_GetJoystickName(_joysticks[i]) ? SDL_GetJoystickName(_joysticks[i]) : "(null)",
+                    nbtn, nax, nhat);
+                fflush(stderr);
+            }
         }
         SDL_free( ids );
     }
@@ -568,6 +579,44 @@ void  __bgdexport( libjoy, module_finalize )()
 }
 
 /* ----------------------------------------------------------------- */
+
+/* DIAGNOSTIC: log the first joystick button press / axis movement we
+ * see, per joystick. Useful for figuring out why a bennugd game feels
+ * deaf to the gamepad — if this fires, the SDL → libjoy pipeline is
+ * working and the game's own config is at fault; if it never fires,
+ * the event loop or device open is broken. */
+static void __libjoy_first_input_diag(void)
+{
+    static int first_btn_logged[16] = {0};
+    static int first_axis_logged[16] = {0};
+    int j;
+    for (j = 0; j < _max_joys && j < 16; j++) {
+        if (!_joysticks[j]) continue;
+        int nbtn = SDL_GetNumJoystickButtons(_joysticks[j]);
+        for (int b = 0; b < nbtn && !first_btn_logged[j]; b++) {
+            if (SDL_GetJoystickButton(_joysticks[j], b)) {
+                fprintf(stderr, "[JOY] first button press: joy#%d btn%d\n", j, b);
+                fflush(stderr);
+                first_btn_logged[j] = 1;
+            }
+        }
+        int nax = SDL_GetNumJoystickAxes(_joysticks[j]);
+        for (int a = 0; a < nax && !first_axis_logged[j]; a++) {
+            int v = SDL_GetJoystickAxis(_joysticks[j], a);
+            if (v > 16000 || v < -16000) {
+                fprintf(stderr, "[JOY] first axis motion: joy#%d axis%d value=%d\n", j, a, v);
+                fflush(stderr);
+                first_axis_logged[j] = 1;
+            }
+        }
+    }
+}
+
+HOOK __bgdexport( libjoy, handler_hooks )[] =
+{
+    { 4800, __libjoy_first_input_diag },
+    {    0, NULL }
+};
 
 char * __bgdexport( libjoy, modules_dependency )[] =
 {
