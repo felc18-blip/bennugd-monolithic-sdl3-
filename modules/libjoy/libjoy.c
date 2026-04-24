@@ -208,17 +208,7 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
     if (p->fd < 0) return;
     struct input_event ev[32];
     ssize_t n;
-    /* one-shot diag: log fd + first non-trivial read */
-    static int diag_logged[32] = {0};
-    int slot = -1;
-    for (int j = 0; j < 32; j++) if (&_rawpads[j] == p) { slot = j; break; }
-
     while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
-        if (slot >= 0 && !diag_logged[slot]) {
-            fprintf(stderr, "[JOY-RAW] FIRST DRAIN HIT joy#%d fd=%d bytes=%zd\n", slot, p->fd, n);
-            fflush(stderr);
-            diag_logged[slot] = 1;
-        }
         int k = n / sizeof(ev[0]);
         for (int i = 0; i < k; i++) {
             struct input_event *e = &ev[i];
@@ -880,20 +870,7 @@ static void __libjoy_first_input_diag(void)
             }
         }
     }
-    /* Dump rawpad state periodically — one line per open pad. */
-    if ((tick++ % 60) == 0 && _max_joys > 0) {
-#ifdef LIBJOY_DIRECT_EVDEV
-        for (int j = 0; j < _max_joys; j++) {
-            if (_rawpads[j].fd < 0) continue;
-            int pc = 0;
-            for (int b = 0; b < _rawpads[j].nbtn; b++) if (_rawpads[j].buttons[b]) pc++;
-            fprintf(stderr, "[JOY-RAW] heartbeat joy#%d: pressed=%d/%d axis0=%d axis1=%d hat0=0x%x\n",
-                j, pc, _rawpads[j].nbtn, _rawpads[j].axes[0], _rawpads[j].axes[1],
-                _rawpads[j].nhat ? _rawpads[j].hats[0] : 0);
-            fflush(stderr);
-        }
-#endif
-    }
+    (void)tick;
 }
 
 HOOK __bgdexport( libjoy, handler_hooks )[] =
