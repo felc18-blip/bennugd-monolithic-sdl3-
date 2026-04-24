@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -55,10 +55,12 @@ static void activate_vpalette()
 
     if (( sys_pixel_format ) && ( sys_pixel_format->palette ) )
     {
+        /* SDL3: screen->format is SDL_PixelFormat enum. Get details for SDL_MapRGB. */
+        const SDL_PixelFormatDetails *fd = SDL_GetPixelFormatDetails(screen->format);
         if ( sys_pixel_format->depth > 8 )
         {
             for ( n = 0 ; n < 256 ; n++ )
-                sys_pixel_format->palette->colorequiv[ n ] = SDL_MapRGB( screen->format, sys_pixel_format->palette->rgb[ n ].r, sys_pixel_format->palette->rgb[ n ].g, sys_pixel_format->palette->rgb[ n ].b ) ;
+                sys_pixel_format->palette->colorequiv[ n ] = SDL_MapRGB( fd, NULL, sys_pixel_format->palette->rgb[ n ].r, sys_pixel_format->palette->rgb[ n ].g, sys_pixel_format->palette->rgb[ n ].b ) ;
         }
         else
         {
@@ -80,7 +82,11 @@ static void activate_vpalette()
                     vpalette[ n ].b = sys_pixel_format->palette->rgb[ n ].b + ( 255 - sys_pixel_format->palette->rgb[ n ].b ) * ( fade_pos.b - 100 ) / 100;
             }
 
-            SDL_SetPaletteColors(screen->format->palette, vpalette, 0, 256);
+            /* SDL3: palette accessed via SDL_GetSurfacePalette */
+            {
+                SDL_Palette *pal = SDL_GetSurfacePalette(screen);
+                if (pal) SDL_SetPaletteColors(pal, vpalette, 0, 256);
+            }
         }
     }
 }

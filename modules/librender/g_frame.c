@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -58,7 +58,7 @@ float ticks_per_frame = 0;
 float fps_partial = 0;
 
 /* --------------------------------------------------------------------------- */
-/* Inicialización y controles de tiempo                                        */
+/* Inicializaciï¿½n y controles de tiempo                                        */
 /* --------------------------------------------------------------------------- */
 
 /*
@@ -260,7 +260,11 @@ void gr_refresh_palette()
                 palette[ n ].b = *pal++;
             }
         }
-        SDL_SetPaletteColors(screen->format->palette, palette, 0, 256);
+        /* SDL3: palette accessed via SDL_GetSurfacePalette */
+        {
+            SDL_Palette *pal = SDL_GetSurfacePalette(screen);
+            if (pal) SDL_SetPaletteColors(pal, palette, 0, 256);
+        }
     }
 
     palette_changed = 0;

@@ -33,7 +33,7 @@
 #include "files.h"
 #include "xstrings.h"
 
-#include <SDL_types.h>
+#include <SDL3/SDL_stdinc.h>
 
 #ifndef __GNUC__
 #define __PACKED

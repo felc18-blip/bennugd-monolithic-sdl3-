@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -483,20 +483,24 @@ void  __bgdexport( libjoy, module_initialize )()
         SDL_SetJoystickEventsEnabled( true ) ;
     }
 
-    /* Open all joysticks */
-    if (( _max_joys = SDL_NumJoysticks() ) > MAX_JOYS )
+    /* Open all joysticks (SDL3: enumerate by instance ID) */
     {
-        printf( "[JOY] Warning: maximum number of joysticks exceeded (%i>%i)", _max_joys, MAX_JOYS );
-        _max_joys = MAX_JOYS;
+        int njoys = 0;
+        SDL_JoystickID *ids = SDL_GetJoysticks( &njoys );
+        if (( _max_joys = njoys ) > MAX_JOYS )
+        {
+            printf( "[JOY] Warning: maximum number of joysticks exceeded (%i>%i)", _max_joys, MAX_JOYS );
+            _max_joys = MAX_JOYS;
+        }
+        for ( i = 0; i < _max_joys; i++ )
+        {
+            _joysticks[i] = SDL_OpenJoystick( ids[i] ) ;
+            if ( !_joysticks[ i ] ) printf( "[JOY] Failed to open joystick '%i'", i );
+        }
+        SDL_free( ids );
     }
 
-    for ( i = 0; i < _max_joys; i++ )
-    {
-        _joysticks[i] = SDL_JoystickOpen( i ) ;
-        if ( !_joysticks[ i ] ) printf( "[JOY] Failed to open joystick '%i'", i );
-    }
-
-    SDL_JoystickUpdate() ;
+    SDL_UpdateJoysticks() ;
 
 #ifdef TARGET_CAANOO
     KIONIX_ACCEL_init();

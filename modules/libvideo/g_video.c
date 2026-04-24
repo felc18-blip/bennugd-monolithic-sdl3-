@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -157,7 +157,7 @@ char * __bgdexport( libvideo, globals_def ) =
 
 DLVARFIXUP __bgdexport( libvideo, globals_fixup )[] =
 {
-    /* Nombre de variable global, puntero al dato, tamaño del elemento, cantidad de elementos */
+    /* Nombre de variable global, puntero al dato, tamaï¿½o del elemento, cantidad de elementos */
     { "graph_mode" , NULL, -1, -1 },
     { "scale_mode" , NULL, -1, -1 },
     { "full_screen" , NULL, -1, -1 },
@@ -251,17 +251,28 @@ int gr_set_icon( GRAPH * map )
                 }
             }
 
-            ico = SDL_CreateRGBSurfaceFrom( icon->data, 32, 32, 8, 32, 0x00, 0x00, 0x00, 0x00 ) ;
-
-            SDL_SetPaletteColors(ico->format->palette, palette, 0, 256);
+            /* SDL3: SDL_CreateRGBSurfaceFrom removed. Use SDL_CreateSurfaceFrom
+             * with a pitch + SDL_PixelFormat enum. For 8-bit indexed with palette
+             * use SDL_PIXELFORMAT_INDEX8. Palette is on the surface, not format. */
+            ico = SDL_CreateSurfaceFrom(32, 32, SDL_PIXELFORMAT_INDEX8, icon->data, 32);
+            if (ico) {
+                SDL_Palette *ico_pal = SDL_CreateSurfacePalette(ico);
+                if (ico_pal) SDL_SetPaletteColors(ico_pal, palette, 0, 256);
+            }
         }
         else
         {
-            ico = SDL_CreateRGBSurfaceFrom( icon->data, 32, 32, icon->format->depth, icon->pitch, icon->format->Rmask, icon->format->Gmask, icon->format->Bmask, icon->format->Amask ) ;
+            /* SDL3: bennugd GRAPH is 16/32-bit RGBA depending on icon->format->depth.
+             * Pick the right SDL_PixelFormat enum. For typical 16-bit RGB565 or
+             * 32-bit ARGB8888. Uses SDL_CreateSurfaceFrom. */
+            SDL_PixelFormat pxfmt = (icon->format->depth == 16)
+                                    ? SDL_PIXELFORMAT_RGB565
+                                    : SDL_PIXELFORMAT_ARGB8888;
+            ico = SDL_CreateSurfaceFrom(32, 32, pxfmt, icon->data, icon->pitch);
         }
 
         SDL_SetWindowIcon(window, ico);
-        SDL_FreeSurface( ico ) ;
+        SDL_DestroySurface( ico ) ;  /* SDL3: was SDL_FreeSurface */
     }
 
     return 1 ;
@@ -326,7 +337,7 @@ int gr_set_mode( int width, int height, int depth )
         enable_32bits = 1;
     }
 
-    /* Inicializa el modo gráfico */
+    /* Inicializa el modo grï¿½fico */
 
     if ( scrbitmap )
     {
@@ -347,17 +358,16 @@ int gr_set_mode( int width, int height, int depth )
         if (grab_input) {
             sdl_flags |= SDL_WINDOW_MOUSE_GRABBED;
         }
-        window = SDL_CreateWindow(apptitle,
-                                  SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                                  surface_width, surface_height, sdl_flags);
+        /* SDL3: SDL_CreateWindow takes 4 args (no x/y); position via SDL_SetWindowPosition */
+        window = SDL_CreateWindow(apptitle, surface_width, surface_height, sdl_flags);
         if(window) {
-            sdl_flags = 0;
-            if (waitvsync) {
-                sdl_flags = SDL_RENDERER_PRESENTVSYNC;
+            /* SDL3: SDL_CreateRenderer takes 2 args (name can be NULL for default) */
+            renderer = SDL_CreateRenderer(window, NULL);
+            if (renderer && waitvsync) {
+                SDL_SetRenderVSync(renderer, 1);
             }
-            renderer = SDL_CreateRenderer(window, -1, sdl_flags);
-            // Store the renderer resolution
-            SDL_GetRendererOutputSize(renderer, &renderer_width, &renderer_height);
+            /* Store the renderer resolution (SDL3: SDL_GetCurrentRenderOutputSize) */
+            SDL_GetCurrentRenderOutputSize(renderer, &renderer_width, &renderer_height);
         }
         if (!window || !renderer) {
             SDL_Log("Error creating window and/or renderer (%s)", SDL_GetError());
@@ -372,9 +382,10 @@ int gr_set_mode( int width, int height, int depth )
 
     // Enable SDL scaling, if needed
     if(surface_width != width || surface_height != height) {
-        // I should add support for this from BennuGD
-        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");  // make the scaled rendering look smoother.
-        SDL_RenderSetLogicalSize(renderer, width, height);
+        /* SDL3: SDL_SetRenderLogicalPresentation (was SDL_RenderSetLogicalSize);
+         * LETTERBOX mode preserves aspect ratio. SDL_HINT_RENDER_SCALE_QUALITY
+         * was removed â€” scale mode is per-texture now (default linear). */
+        SDL_SetRenderLogicalPresentation(renderer, width, height, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     }
 
     // This way we can force only one of the sizes (or both) to be native
@@ -399,8 +410,10 @@ int gr_set_mode( int width, int height, int depth )
 
     // Create a SDL_Surface for the pixel data until the complete rendering pipeline
     // is handled by SDL_Render
-    SDL_PixelFormatEnumToMasks(format, &texture_depth, &Rmask, &Gmask, &Bmask, &Amask);
-    screen = SDL_CreateRGBSurface(0, width, height, texture_depth, Rmask, Gmask, Bmask, Amask);
+    /* SDL3: SDL_PixelFormatEnumToMasks â†’ SDL_GetMasksForPixelFormat;
+     * SDL_CreateRGBSurface removed â€” use SDL_CreateSurface(w,h,format). */
+    SDL_GetMasksForPixelFormat(format, &texture_depth, &Rmask, &Gmask, &Bmask, &Amask);
+    screen = SDL_CreateSurface(width, height, format);
     if (depth != texture_depth) {
         SDL_Log("You asked for %dbpp but got %d, bad luck :(", depth, texture_depth);
     }
@@ -425,19 +438,25 @@ int gr_set_mode( int width, int height, int depth )
 
     if ( sys_pixel_format->depth == 16 )
     {
+        /* SDL3: surface->format is SDL_PixelFormat enum, not a struct pointer.
+         * Get masks via SDL_GetPixelFormatDetails. */
+        const SDL_PixelFormatDetails *fd = SDL_GetPixelFormatDetails(screen->format);
+        Uint32 Rm = fd ? fd->Rmask : 0xF800;
+        Uint32 Gm = fd ? fd->Gmask : 0x07E0;
+        Uint32 Bm = fd ? fd->Bmask : 0x001F;
         for ( n = 0 ; n < 65536 ; n++ )
         {
             colorghost[ n ] =
-                ((( n & screen->format->Rmask ) >> 1 ) & screen->format->Rmask ) +
-                ((( n & screen->format->Gmask ) >> 1 ) & screen->format->Gmask ) +
-                ((( n & screen->format->Bmask ) >> 1 ) & screen->format->Bmask ) ;
+                ((( n & Rm ) >> 1 ) & Rm ) +
+                ((( n & Gm ) >> 1 ) & Gm ) +
+                ((( n & Bm ) >> 1 ) & Bm ) ;
         }
 //        bitmap_16bits_conversion();
     }
 
     scr_initialized = 1 ;
 
-    SDL_ShowCursor( 0 ) ;
+    SDL_HideCursor() ;  /* SDL3: SDL_ShowCursor takes no args now; use SDL_HideCursor/ShowCursor */
 
     pal_refresh( NULL ) ;
     palette_changed = 1 ;

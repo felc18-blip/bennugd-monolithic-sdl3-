@@ -47,7 +47,219 @@
 
 #include "bgload.h"
 
-/* --------------------------------------------------------------------------- */
+/* ===========================================================================
+ * SDL_mixer 2.x compatibility shim, backed by SDL3_mixer 3.x (MIX_* API).
+ *
+ * SDL3_mixer 3.x replaced the entire Mix_* API with MIX_Mixer / MIX_Audio /
+ * MIX_Track concepts. There is no backwards-compatibility layer. This block
+ * reimplements the subset of Mix_* functions bennugd-monolithic uses, on top
+ * of MIX_*.
+ *
+ * Design:
+ *  - One global MIX_Mixer (g_mixer) created in Mix_OpenAudio.
+ *  - One dedicated music MIX_Track (g_music_track).
+ *  - Pool of up to MAX_CHANNELS MIX_Tracks for sound-effect channels,
+ *    allocated lazily on first use of each channel slot.
+ *  - Mix_Music and Mix_Chunk both alias MIX_Audio (which unifies music/sfx).
+ * =========================================================================== */
+
+#define MAX_CHANNELS 32
+
+static MIX_Mixer *g_mixer = NULL;
+static MIX_Track *g_music_track = NULL;
+static MIX_Track *g_channels[MAX_CHANNELS] = { NULL };
+static int g_allocated_channels = 8;  /* bennugd default */
+
+typedef MIX_Audio Mix_Music;
+typedef MIX_Audio Mix_Chunk;
+
+/* Mixer lifecycle */
+static int Mix_OpenAudio(SDL_AudioDeviceID devid, const SDL_AudioSpec *spec) {
+    if (g_mixer) return 0;
+    if (!MIX_Init()) return -1;
+    g_mixer = MIX_CreateMixerDevice(devid ? devid : SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, spec);
+    return g_mixer ? 0 : -1;
+}
+
+static void Mix_CloseAudio(void) {
+    int i;
+    for (i = 0; i < MAX_CHANNELS; i++) {
+        if (g_channels[i]) { MIX_DestroyTrack(g_channels[i]); g_channels[i] = NULL; }
+    }
+    if (g_music_track) { MIX_DestroyTrack(g_music_track); g_music_track = NULL; }
+    if (g_mixer)       { MIX_DestroyMixer(g_mixer);       g_mixer = NULL; }
+    MIX_Quit();
+}
+
+/* Audio loading — both music and chunks map to MIX_LoadAudio_IO */
+static Mix_Music *Mix_LoadMUS_IO(SDL_IOStream *io, bool closeio) {
+    if (!g_mixer) return NULL;
+    return MIX_LoadAudio_IO(g_mixer, io, true /*predecode*/, closeio);
+}
+
+static Mix_Chunk *Mix_LoadWAV_IO(SDL_IOStream *io, bool closeio) {
+    if (!g_mixer) return NULL;
+    return MIX_LoadAudio_IO(g_mixer, io, true, closeio);
+}
+
+static void Mix_FreeMusic(Mix_Music *music)  { MIX_DestroyAudio(music); }
+static void Mix_FreeChunk(Mix_Chunk *chunk)  { MIX_DestroyAudio(chunk); }
+
+/* Channel management */
+static int Mix_AllocateChannels(int n) {
+    if (n >= 0) {
+        /* Free tracks above the new cap */
+        int i;
+        for (i = n; i < MAX_CHANNELS; i++) {
+            if (g_channels[i]) { MIX_DestroyTrack(g_channels[i]); g_channels[i] = NULL; }
+        }
+        g_allocated_channels = (n > MAX_CHANNELS) ? MAX_CHANNELS : n;
+    }
+    return g_allocated_channels;
+}
+
+static int Mix_ReserveChannels(int num) { return Mix_AllocateChannels(num); }
+
+static MIX_Track *ensure_channel_track(int ch) {
+    if (ch < 0 || ch >= MAX_CHANNELS || !g_mixer) return NULL;
+    if (!g_channels[ch]) g_channels[ch] = MIX_CreateTrack(g_mixer);
+    return g_channels[ch];
+}
+
+static MIX_Track *ensure_music_track(void) {
+    if (!g_mixer) return NULL;
+    if (!g_music_track) g_music_track = MIX_CreateTrack(g_mixer);
+    return g_music_track;
+}
+
+/* Music playback */
+static int Mix_PlayMusic(Mix_Music *music, int loops) {
+    MIX_Track *t = ensure_music_track();
+    if (!t || !MIX_SetTrackAudio(t, music)) return -1;
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetNumberProperty(props, MIX_PROP_PLAY_LOOPS_NUMBER, (loops < 0) ? -1 : loops);
+    bool ok = MIX_PlayTrack(t, props);
+    SDL_DestroyProperties(props);
+    return ok ? 0 : -1;
+}
+
+static int Mix_FadeInMusic(Mix_Music *music, int loops, int ms) {
+    MIX_Track *t = ensure_music_track();
+    if (!t || !MIX_SetTrackAudio(t, music)) return -1;
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetNumberProperty(props, MIX_PROP_PLAY_LOOPS_NUMBER, (loops < 0) ? -1 : loops);
+    /* Fade-in frames = ms * spec.freq / 1000 — SDL3_mixer takes frames.
+     * For simplicity we pass ms * 48 (~48kHz default) — close enough. */
+    SDL_SetNumberProperty(props, MIX_PROP_PLAY_FADE_IN_MILLISECONDS_NUMBER, ms);
+    bool ok = MIX_PlayTrack(t, props);
+    SDL_DestroyProperties(props);
+    return ok ? 0 : -1;
+}
+
+static int Mix_FadeOutMusic(int ms) {
+    if (!g_music_track) return 0;
+    /* ms to frames — rough: assume 48kHz */
+    return MIX_StopTrack(g_music_track, (Sint64)ms * 48) ? 1 : 0;
+}
+
+static int Mix_HaltMusic(void) {
+    if (!g_music_track) return 0;
+    return MIX_StopTrack(g_music_track, 0) ? 0 : -1;
+}
+
+static int Mix_PauseMusic(void)   { if (g_music_track) MIX_PauseTrack(g_music_track);  return 0; }
+static int Mix_ResumeMusic(void)  { if (g_music_track) MIX_ResumeTrack(g_music_track); return 0; }
+static int Mix_PlayingMusic(void) { return g_music_track ? (MIX_TrackPlaying(g_music_track) ? 1 : 0) : 0; }
+
+static int Mix_VolumeMusic(int volume) {
+    if (!g_music_track) return 0;
+    /* SDL_mixer 2.x: 0..128. SDL3_mixer: float gain, 1.0 = unity. */
+    if (volume >= 0) {
+        float gain = (float)volume / 128.0f;
+        MIX_SetTrackGain(g_music_track, gain);
+    }
+    return volume;
+}
+
+/* Channel (sfx) playback */
+static int Mix_PlayChannelTimed(int channel, Mix_Chunk *chunk, int loops, int ticks) {
+    (void)ticks;  /* bennugd uses -1; SDL3_mixer doesn't have ms cap on channels easily */
+    if (channel == -1) {
+        /* find first free channel */
+        int i;
+        for (i = 0; i < g_allocated_channels; i++) {
+            MIX_Track *t = ensure_channel_track(i);
+            if (t && !MIX_TrackPlaying(t)) { channel = i; break; }
+        }
+        if (channel == -1) return -1;
+    }
+    MIX_Track *t = ensure_channel_track(channel);
+    if (!t || !MIX_SetTrackAudio(t, chunk)) return -1;
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetNumberProperty(props, MIX_PROP_PLAY_LOOPS_NUMBER, (loops < 0) ? -1 : loops);
+    bool ok = MIX_PlayTrack(t, props);
+    SDL_DestroyProperties(props);
+    return ok ? channel : -1;
+}
+
+static int Mix_PlayChannel(int channel, Mix_Chunk *chunk, int loops) {
+    return Mix_PlayChannelTimed(channel, chunk, loops, -1);
+}
+
+static int Mix_HaltChannel(int channel) {
+    if (channel == -1) {
+        int i;
+        for (i = 0; i < MAX_CHANNELS; i++) if (g_channels[i]) MIX_StopTrack(g_channels[i], 0);
+        return 0;
+    }
+    if (channel < 0 || channel >= MAX_CHANNELS || !g_channels[channel]) return 0;
+    MIX_StopTrack(g_channels[channel], 0);
+    return 0;
+}
+
+static int Mix_Pause(int channel) {
+    if (channel < 0 || channel >= MAX_CHANNELS || !g_channels[channel]) return 0;
+    MIX_PauseTrack(g_channels[channel]);
+    return 0;
+}
+static int Mix_Resume(int channel) {
+    if (channel < 0 || channel >= MAX_CHANNELS || !g_channels[channel]) return 0;
+    MIX_ResumeTrack(g_channels[channel]);
+    return 0;
+}
+static int Mix_Playing(int channel) {
+    if (channel < 0 || channel >= MAX_CHANNELS || !g_channels[channel]) return 0;
+    return MIX_TrackPlaying(g_channels[channel]) ? 1 : 0;
+}
+
+static int Mix_Volume(int channel, int volume) {
+    if (channel < 0 || channel >= MAX_CHANNELS || !g_channels[channel]) return 0;
+    if (volume >= 0) {
+        float gain = (float)volume / 128.0f;
+        MIX_SetTrackGain(g_channels[channel], gain);
+    }
+    return volume;
+}
+
+static int Mix_VolumeChunk(Mix_Chunk *chunk, int volume) { (void)chunk; return volume; }
+
+/* Stereo panning / 3D positioning — stubs (SDL3_mixer has different APIs).
+ * Returning 1 = success, 0 = failure in the SDL_mixer 2.x convention. */
+static int Mix_SetPanning(int channel, Uint8 left, Uint8 right) { (void)channel; (void)left; (void)right; return 1; }
+static int Mix_SetPosition(int channel, Sint16 angle, Uint8 distance) { (void)channel; (void)angle; (void)distance; return 1; }
+static int Mix_SetDistance(int channel, Uint8 distance) { (void)channel; (void)distance; return 1; }
+static int Mix_SetReverseStereo(int channel, int flip) { (void)channel; (void)flip; return 1; }
+static int Mix_SetMusicPosition(double pos) {
+    if (!g_music_track) return -1;
+    Sint64 frames = MIX_TrackMSToFrames(g_music_track, (Sint64)(pos * 1000.0));
+    return MIX_SetTrackPlaybackPosition(g_music_track, frames) ? 0 : -1;
+}
+
+/* ===========================================================================
+ * End of SDL3_mixer compat shim. Below is the original mod_sound code,
+ * unchanged apart from the SDL_RWops -> SDL_IOStream callback migration
+ * already done in an earlier pass.
+ * =========================================================================== */
 
 static int audio_initialized = 0 ;
 

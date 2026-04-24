@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -50,7 +50,7 @@
 /* Definicion de variables globales (usada en tiempo de compilacion) */
 
 char * __bgdexport( libwm, globals_def ) =
-    "exit_status = 0;\n"                /* SDL_QUIT status */
+    "exit_status = 0;\n"                /* SDL_EVENT_QUIT status */
     "window_status = 1;\n"              /* MINIMIZED:0 VISIBLE:1 */
     "focus_status = 1;\n"               /* FOCUS status */
     "mouse_status = 1;\n";              /* MOUSE status (INSIDE WINDOW:1) */
@@ -62,7 +62,7 @@ char * __bgdexport( libwm, globals_def ) =
 
 DLVARFIXUP  __bgdexport( libwm, globals_fixup )[] =
 {
-    /* Nombre de variable global, puntero al dato, tamaño del elemento, cantidad de elementos */
+    /* Nombre de variable global, puntero al dato, tamaï¿½o del elemento, cantidad de elementos */
     { "exit_status"     , NULL, -1, -1 },
     { "window_status"   , NULL, -1, -1 },
     { "focus_status"    , NULL, -1, -1 },
@@ -71,7 +71,7 @@ DLVARFIXUP  __bgdexport( libwm, globals_fixup )[] =
 };
 
 /* --------------------------------------------------------------------------- */
-/* Gestión de eventos de ventana                                               */
+/* Gestiï¿½n de eventos de ventana                                               */
 /* --------------------------------------------------------------------------- */
 
 /*
@@ -96,45 +96,44 @@ static void wm_events()
     GLODWORD( libwm, EXIT_STATUS ) = 0 ;
 
     /* Handle the plethora of events different systems can produce here */
-    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_QUIT, SDL_WINDOWEVENT ) > 0 )
+    while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_QUIT, SDL_EVENT_WINDOW_FIRST ) > 0 )
     {
         switch ( e.type )
         {
-            case SDL_QUIT:
+            case SDL_EVENT_QUIT:
                 /* UPDATE  exit status... initilized each frame */
                 GLODWORD( libwm, EXIT_STATUS ) = 1 ;
                 break ;
-            case SDL_WINDOWEVENT:
-                switch (e.window.event) {
-                    case SDL_WINDOWEVENT_MINIMIZED:
+            case SDL_EVENT_WINDOW_FIRST:
+                switch (e.window.type) {
+                    case SDL_EVENT_WINDOW_MINIMIZED:
                         GLODWORD(libwm, WINDOW_STATUS) = 0;
                         break;
-                    case SDL_WINDOWEVENT_RESTORED:
-                        gr_set_mode(screen->w, screen->h, screen->format->BitsPerPixel);
+                    case SDL_EVENT_WINDOW_RESTORED:
+                        gr_set_mode(screen->w, screen->h, SDL_BITSPERPIXEL(screen->format));
                         GLODWORD(libwm, WINDOW_STATUS) = 1;
                         break;
-                    case SDL_WINDOWEVENT_ENTER:
+                    case SDL_EVENT_WINDOW_MOUSE_ENTER:
                         GLODWORD(libwm, MOUSE_STATUS) = 1;
                         break;
-                    case SDL_WINDOWEVENT_LEAVE:
+                    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
                         GLODWORD(libwm, MOUSE_STATUS) = 0;
                         break;
-                    case SDL_WINDOWEVENT_HIDDEN:
+                    case SDL_EVENT_WINDOW_HIDDEN:
                         GLODWORD(libwm, WINDOW_STATUS) = 0;
                         break;
-                    case SDL_WINDOWEVENT_SHOWN:
+                    case SDL_EVENT_WINDOW_SHOWN:
                         GLODWORD(libwm, WINDOW_STATUS) = 1;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_LOST:
+                    case SDL_EVENT_WINDOW_FOCUS_LOST:
                         GLODWORD(libwm, FOCUS_STATUS) = 0;
                         break;
-                    case SDL_WINDOWEVENT_FOCUS_GAINED:
+                    case SDL_EVENT_WINDOW_FOCUS_GAINED:
                         GLODWORD(libwm, FOCUS_STATUS) = 1;
                         break;
                 }
             
-            case SDL_SYSWMEVENT:
-                break ;
+            /* SDL_SYSWMEVENT removed in SDL3 â€” WM-specific events gone */
         }
     }
 }

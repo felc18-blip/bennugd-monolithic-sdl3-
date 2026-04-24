@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -157,7 +157,8 @@ int gr_lock_screen()
     if ( !scrbitmap || !( scrbitmap->info_flags & GI_EXTERNAL_DATA ) )
     {
         if ( scrbitmap ) bitmap_destroy( scrbitmap ) ;
-        scrbitmap = bitmap_new_ex( 0, screen->w, screen->h, screen->format->BitsPerPixel, screen->pixels, screen->pitch );
+        /* SDL3: screen->format is SDL_PixelFormat enum; use SDL_BITSPERPIXEL macro */
+        scrbitmap = bitmap_new_ex( 0, screen->w, screen->h, SDL_BITSPERPIXEL(screen->format), screen->pixels, screen->pitch );
         bitmap_add_cpoint( scrbitmap, 0, 0 ) ;
     }
 
@@ -178,7 +179,7 @@ void gr_unlock_screen()
     if ( waitvsync ) gr_wait_vsync();
     SDL_UpdateTexture(texture, NULL, screen->pixels, screen->pitch);
     SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    SDL_RenderTexture(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
 }
 
