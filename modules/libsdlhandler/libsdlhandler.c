@@ -30,7 +30,9 @@
 
 #ifdef __linux__
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/ioctl.h>
@@ -170,7 +172,18 @@ static void scan_evdev_keyboards(void)
         if (!device_is_keyboard(fd)) { close(fd); continue; }
         char name[128] = "";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-        SDL_Log("libsdlhandler: evdev kbd %s -> %s", path, name);
+
+        /* EVIOCGRAB(1): take exclusive read access. Without this, SDL3's
+         * own EVDEV backend also reads from /dev/input/eventN and pushes
+         * its own KEY_DOWN/KEY_UP events into the queue — together with
+         * the ones we SDL_PushEvent below, that's a double-delivery bug
+         * ("1 tecla duplicada"). Grabbing serializes the device to us. */
+        if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+            SDL_Log("libsdlhandler: EVIOCGRAB on %s failed (errno=%d) — SDL3 may double-deliver", path, errno);
+        } else {
+            SDL_Log("libsdlhandler: grabbed %s (%s) exclusively", path, name);
+        }
+
         ev_fds[ev_fd_count++] = fd;
     }
     SDL_Log("libsdlhandler: total direct evdev kbds = %d", ev_fd_count);
