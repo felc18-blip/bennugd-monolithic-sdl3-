@@ -258,6 +258,8 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
 
 int libjoy_num( void )
 {
+    static int logged = 0;
+    if (!logged) { fprintf(stderr, "[JOY-RAW] libjoy_num() = %d\n", _max_joys); fflush(stderr); logged = 1; }
     return _max_joys ;
 }
 
@@ -293,6 +295,8 @@ int libjoy_select( int joy )
 
 int libjoy_buttons( void )
 {
+    static int logged = 0;
+    if (!logged) { fprintf(stderr, "[JOY-RAW] libjoy_buttons() called sel=%d max=%d\n", _selected_joystick, _max_joys); fflush(stderr); logged = 1; }
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
 #ifdef TARGET_CAANOO
@@ -313,6 +317,8 @@ int libjoy_buttons( void )
 
 int libjoy_axes( void )
 {
+    static int logged = 0;
+    if (!logged) { fprintf(stderr, "[JOY-RAW] libjoy_axes() called sel=%d max=%d\n", _selected_joystick, _max_joys); fflush(stderr); logged = 1; }
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
 #ifdef LIBJOY_DIRECT_EVDEV
@@ -390,6 +396,8 @@ int libjoy_get_button( int button )
 
 int libjoy_get_position( int axis )
 {
+    static int log_count = 0;
+    if (log_count++ < 5) { fprintf(stderr, "[JOY-RAW] libjoy_get_position(%d) sel=%d max=%d\n", axis, _selected_joystick, _max_joys); fflush(stderr); }
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
 #ifdef LIBJOY_DIRECT_EVDEV
@@ -442,6 +450,8 @@ int libjoy_balls( void )
 
 int libjoy_get_hat( int hat )
 {
+    static int log_count = 0;
+    if (log_count++ < 5) { fprintf(stderr, "[JOY-RAW] libjoy_get_hat(%d) sel=%d max=%d\n", hat, _selected_joystick, _max_joys); fflush(stderr); }
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
 #ifdef LIBJOY_DIRECT_EVDEV
