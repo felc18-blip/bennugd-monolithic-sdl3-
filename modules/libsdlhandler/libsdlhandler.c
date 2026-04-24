@@ -224,32 +224,16 @@ static void poll_evdev_keys(void)
 }
 
 static int g_direct_evdev_initialized = 0;
-static int g_rescan_counter = 0;
 
-static void rescan_if_needed(void)
-{
-    /* Every ~60 polls (~1 sec at 60 FPS) close+rescan so newly
-     * hotplugged evdev devices (e.g. gptokeyb virtual kbd created
-     * after bgdi init) are picked up. Cheap: ioctl+close. */
-    if (++g_rescan_counter < 60) return;
-    g_rescan_counter = 0;
-    /* Count current /dev/input/event* that look like keyboards */
-    int found = 0;
-    for (int i = 0; i < 32; i++) {
-        char path[64];
-        snprintf(path, sizeof(path), "/dev/input/event%d", i);
-        int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-        if (fd < 0) continue;
-        int is_kbd = device_is_keyboard(fd);
-        close(fd);
-        if (is_kbd) found++;
-    }
-    if (found == ev_fd_count) return;  /* no change */
-    /* Close & re-scan */
-    for (int i = 0; i < ev_fd_count; i++) close(ev_fds[i]);
-    ev_fd_count = 0;
-    scan_evdev_keyboards();
-}
+/* NOTE: a prior iteration had rescan_if_needed() that closed and
+ * re-scanned every ~60 polls so a gptokeyb virtual keyboard created
+ * after bgdi init would be hotplugged in. On Amlogic Mali FBDEV that
+ * pattern caused visible video stutter — opening 32 /dev/input/event*
+ * fds every second stalls the frame loop enough to interrupt playback.
+ *
+ * Dropped the rescan entirely; SorR.sh (and other PortMaster launchers)
+ * already spawn gptokeyb BEFORE starting bgdi, so scan_evdev_keyboards()
+ * on first poll catches everything we need. */
 #endif /* __linux__ */
 
 /* ----------------------------------------------------------------- */
@@ -275,7 +259,7 @@ static void  dump_new_events()
         }
         if (enable) scan_evdev_keyboards();
     }
-    if (ev_fd_count > 0) { rescan_if_needed(); poll_evdev_keys(); }
+    if (ev_fd_count > 0) poll_evdev_keys();
 #endif
     SDL_PumpEvents();
 }
