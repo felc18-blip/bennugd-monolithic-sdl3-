@@ -59,6 +59,7 @@ char *__bgdexport( libjoy, modules_dependency )[] =
 };
 #else
 extern DLCONSTANT __bgdexport( libjoy, constants_def )[];
+extern HOOK __bgdexport( libjoy, handler_hooks )[];
 extern void __bgdexport( libjoy, module_initialize )();
 extern void __bgdexport( libjoy, module_finalize )();
 extern char __bgdexport( libjoy, modules_dependency )[];
