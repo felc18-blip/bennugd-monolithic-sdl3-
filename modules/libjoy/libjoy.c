@@ -870,17 +870,19 @@ static void __libjoy_first_input_diag(void)
             }
         }
     }
-    /* Also dump every ~120 hook calls whether any button is pressed, so
-     * we can see whether state is being refreshed at all. */
-    if ((tick++ % 120) == 0 && _max_joys > 0 && _joysticks[0]) {
-        int nbtn = SDL_GetNumJoystickButtons(_joysticks[0]);
-        int pressed_count = 0;
-        for (int b = 0; b < nbtn; b++) {
-            if (SDL_GetJoystickButton(_joysticks[0], b)) pressed_count++;
+    /* Dump rawpad state periodically — this is what libjoy_* getters now
+     * return, so this shows whether direct-evdev drain is working. */
+    if ((tick++ % 60) == 0 && _max_joys > 0) {
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[0].fd >= 0) {
+            int pc = 0;
+            for (int b = 0; b < _rawpads[0].nbtn; b++) if (_rawpads[0].buttons[b]) pc++;
+            fprintf(stderr, "[JOY-RAW] heartbeat: joy#0 pressed=%d/%d axis0=%d axis1=%d hat0=0x%x\n",
+                pc, _rawpads[0].nbtn, _rawpads[0].axes[0], _rawpads[0].axes[1],
+                _rawpads[0].nhat ? _rawpads[0].hats[0] : 0);
+            fflush(stderr);
         }
-        fprintf(stderr, "[JOY] heartbeat: joy#0 pressed=%d/%d  axis0=%d\n",
-            pressed_count, nbtn, SDL_GetJoystickAxis(_joysticks[0], 0));
-        fflush(stderr);
+#endif
     }
 }
 
