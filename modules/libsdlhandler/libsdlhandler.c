@@ -246,9 +246,21 @@ static void  dump_new_events()
 #ifdef __linux__
     if (!g_direct_evdev_initialized) {
         g_direct_evdev_initialized = 1;
-        if (SDL_getenv("BGD_DIRECT_EVDEV") || SDL_getenv("BGD_DISABLE_SDL_JOYSTICK")) {
-            scan_evdev_keyboards();
+        /* Enable direct evdev reader by default on Mali FBDEV (Amlogic),
+         * where SDL3's own evdev integration drops events randomly when a
+         * gptokeyb uinput virtual keyboard is involved. Opt out with
+         * BGD_DIRECT_EVDEV=0. */
+        const char *opt = SDL_getenv("BGD_DIRECT_EVDEV");
+        int enable = 1;
+        if (opt && (opt[0] == '0' || opt[0] == 'n' || opt[0] == 'N'))
+            enable = 0;
+        else {
+            const char *vd = SDL_GetCurrentVideoDriver();
+            /* If no Mali driver and no explicit opt-in, stay out of the way. */
+            if ((!vd || SDL_strcmp(vd, "mali") != 0) && !SDL_getenv("BGD_DISABLE_SDL_JOYSTICK"))
+                enable = 0;
         }
+        if (enable) scan_evdev_keyboards();
     }
     if (ev_fd_count > 0) { rescan_if_needed(); poll_evdev_keys(); }
 #endif

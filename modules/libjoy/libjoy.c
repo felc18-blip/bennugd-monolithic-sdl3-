@@ -477,16 +477,24 @@ void  __bgdexport( libjoy, module_initialize )()
 {
     int i;
 
-    /* Skip SDL joystick init when a gptokeyb virtual keyboard is expected
-     * (PortMaster ports use gptokeyb to translate joy -> kbd, and bennugd
-     * runs those games purely via libkey; if BOTH SDL3 and gptokeyb read
-     * the same /dev/input/eventN for the physical pad, they race on
-     * read(), losing events. Set BGD_DISABLE_SDL_JOYSTICK=1 to opt out). */
-    if ( SDL_getenv( "BGD_DISABLE_SDL_JOYSTICK" ) )
+    /* Skip SDL joystick init on Amlogic Mali FBDEV by default. PortMaster
+     * ports feed bennugd via gptokeyb (joy -> kbd through uinput), and
+     * SDL3 libjoy also opening the same /dev/input/eventN for the pad
+     * races gptokeyb on read(), losing events. Override with
+     * BGD_DISABLE_SDL_JOYSTICK=0 if you need the libjoy path. */
     {
-        SDL_Log("libjoy: SDL joystick init skipped (BGD_DISABLE_SDL_JOYSTICK set)");
-        _max_joys = 0;
-        goto skip_joystick_init;
+        const char *opt = SDL_getenv("BGD_DISABLE_SDL_JOYSTICK");
+        int skip = 0;
+        if (opt) skip = (opt[0] != '0' && opt[0] != 'n' && opt[0] != 'N');
+        else {
+            const char *vd = SDL_GetCurrentVideoDriver();
+            if (vd && SDL_strcmp(vd, "mali") == 0) skip = 1;
+        }
+        if (skip) {
+            SDL_Log("libjoy: SDL joystick init skipped (gptokeyb path assumed)");
+            _max_joys = 0;
+            goto skip_joystick_init;
+        }
     }
 
     if ( !SDL_WasInit( SDL_INIT_JOYSTICK ) )
