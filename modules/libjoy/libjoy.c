@@ -208,22 +208,12 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
     if (p->fd < 0) return;
     struct input_event ev[32];
     ssize_t n;
-    static int drain_diag = 0;
-    if ((drain_diag++ % 300) == 0) {
-        fprintf(stderr, "[JOY-RAW] drain_pad fd=%d sizeof(input_event)=%zu\n",
-            p->fd, sizeof(struct input_event));
-        fflush(stderr);
-    }
     while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
         int k = n / sizeof(ev[0]);
         for (int i = 0; i < k; i++) {
             struct input_event *e = &ev[i];
-            fprintf(stderr, "[JOY-RAW] fd=%d ev type=%d code=0x%x val=%d\n",
-                p->fd, e->type, e->code, e->value);
-            fflush(stderr);
             if (e->type == EV_KEY && e->code < KEY_MAX) {
                 int idx = p->btn_map[e->code];
-                fprintf(stderr, "[JOY-RAW]   key: code=0x%x → idx=%d (btn_map)\n", e->code, idx);
                 if (idx >= 0 && idx < LIBJOY_MAX_BTN) {
                     p->buttons[idx] = e->value ? 1 : 0;
                 }
@@ -880,16 +870,16 @@ static void __libjoy_first_input_diag(void)
             }
         }
     }
-    /* Dump rawpad state periodically — this is what libjoy_* getters now
-     * return, so this shows whether direct-evdev drain is working. */
+    /* Dump rawpad state periodically — one line per open pad. */
     if ((tick++ % 60) == 0 && _max_joys > 0) {
 #ifdef LIBJOY_DIRECT_EVDEV
-        if (_rawpads[0].fd >= 0) {
+        for (int j = 0; j < _max_joys; j++) {
+            if (_rawpads[j].fd < 0) continue;
             int pc = 0;
-            for (int b = 0; b < _rawpads[0].nbtn; b++) if (_rawpads[0].buttons[b]) pc++;
-            fprintf(stderr, "[JOY-RAW] heartbeat: joy#0 pressed=%d/%d axis0=%d axis1=%d hat0=0x%x\n",
-                pc, _rawpads[0].nbtn, _rawpads[0].axes[0], _rawpads[0].axes[1],
-                _rawpads[0].nhat ? _rawpads[0].hats[0] : 0);
+            for (int b = 0; b < _rawpads[j].nbtn; b++) if (_rawpads[j].buttons[b]) pc++;
+            fprintf(stderr, "[JOY-RAW] heartbeat joy#%d: pressed=%d/%d axis0=%d axis1=%d hat0=0x%x\n",
+                j, pc, _rawpads[j].nbtn, _rawpads[j].axes[0], _rawpads[j].axes[1],
+                _rawpads[j].nhat ? _rawpads[j].hats[0] : 0);
             fflush(stderr);
         }
 #endif
