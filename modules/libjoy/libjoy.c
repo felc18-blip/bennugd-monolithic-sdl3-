@@ -502,10 +502,24 @@ void  __bgdexport( libjoy, module_initialize )()
         SDL_SetJoystickEventsEnabled( true ) ;
     }
 
+    /* SDL3: joystick enumeration is driven by udev and is ASYNC from
+     * SDL_InitSubSystem. Calling SDL_GetJoysticks immediately after init
+     * returns 0 devices because the first udev scan hasn't landed yet.
+     * Pump the event loop a couple of times with a tiny delay so the
+     * initial add-events are processed and the internal device list is
+     * populated before we enumerate. Without this, bennugd games that
+     * poll libjoy see "no pad" on startup and every JOY_GETBUTTON
+     * returns 0 forever. */
+    SDL_PumpEvents();
+    SDL_Delay( 50 );
+    SDL_PumpEvents();
+
     /* Open all joysticks (SDL3: enumerate by instance ID) */
     {
         int njoys = 0;
         SDL_JoystickID *ids = SDL_GetJoysticks( &njoys );
+        fprintf(stderr, "[JOY] SDL_GetJoysticks = %d devices\n", njoys);
+        fflush(stderr);
         if (( _max_joys = njoys ) > MAX_JOYS )
         {
             printf( "[JOY] Warning: maximum number of joysticks exceeded (%i>%i)", _max_joys, MAX_JOYS );
