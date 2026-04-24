@@ -215,13 +215,15 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
         fflush(stderr);
     }
     while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
-        fprintf(stderr, "[JOY-RAW] drain read %zd bytes (%zd events)\n", n, n / (ssize_t)sizeof(ev[0]));
-        fflush(stderr);
         int k = n / sizeof(ev[0]);
         for (int i = 0; i < k; i++) {
             struct input_event *e = &ev[i];
+            fprintf(stderr, "[JOY-RAW] fd=%d ev type=%d code=0x%x val=%d\n",
+                p->fd, e->type, e->code, e->value);
+            fflush(stderr);
             if (e->type == EV_KEY && e->code < KEY_MAX) {
                 int idx = p->btn_map[e->code];
+                fprintf(stderr, "[JOY-RAW]   key: code=0x%x → idx=%d (btn_map)\n", e->code, idx);
                 if (idx >= 0 && idx < LIBJOY_MAX_BTN) {
                     p->buttons[idx] = e->value ? 1 : 0;
                 }
