@@ -208,7 +208,15 @@ static void libjoy_drain_pad(libjoy_rawpad_t *p) {
     if (p->fd < 0) return;
     struct input_event ev[32];
     ssize_t n;
+    static int drain_diag = 0;
+    if ((drain_diag++ % 300) == 0) {
+        fprintf(stderr, "[JOY-RAW] drain_pad fd=%d sizeof(input_event)=%zu\n",
+            p->fd, sizeof(struct input_event));
+        fflush(stderr);
+    }
     while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
+        fprintf(stderr, "[JOY-RAW] drain read %zd bytes (%zd events)\n", n, n / (ssize_t)sizeof(ev[0]));
+        fflush(stderr);
         int k = n / sizeof(ev[0]);
         for (int i = 0; i < k; i++) {
             struct input_event *e = &ev[i];
