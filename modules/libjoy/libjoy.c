@@ -40,6 +40,37 @@
 #include <SDL3/SDL.h>
 
 /* --------------------------------------------------------------------------- */
+/* Direct evdev reader — workaround for SDL3 lib32 (armhf) which opens the
+ * joystick fd fine but never drains events, so SDL_GetJoystickButton stays
+ * stuck at the initial poll (axis midpoints, all buttons released). We keep
+ * our own state arrays for every gamepad-class /dev/input/event*, read
+ * raw input_events each frame in __libjoy_handle_tick(), and have all the
+ * JOY_GET* functions prefer our cache over SDL's.                             */
+#ifdef __linux__
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <linux/input.h>
+#define LIBJOY_DIRECT_EVDEV 1
+#define LIBJOY_MAX_BTN  32
+#define LIBJOY_MAX_AXIS 16
+#define LIBJOY_MAX_HAT  4
+typedef struct {
+    int fd;                                    /* -1 = slot unused */
+    int buttons[LIBJOY_MAX_BTN];               /* 0/1 */
+    int axes[LIBJOY_MAX_AXIS];                 /* scaled to SDL range (-32768..32767) */
+    int hats[LIBJOY_MAX_HAT];                  /* SDL_HAT_* mask */
+    int btn_map[KEY_MAX];                      /* KEY_* / BTN_* → index into buttons[] */
+    int abs_map[ABS_MAX];                      /* ABS_* → index into axes[] OR hats */
+    int abs_hat[ABS_MAX];                      /* 1 if ABS_HAT0X/Y, stored as hat idx */
+    int abs_min[ABS_MAX], abs_max[ABS_MAX];
+    int nbtn, naxis, nhat;
+} libjoy_rawpad_t;
+static libjoy_rawpad_t _rawpads[32];
+#endif
+
+/* --------------------------------------------------------------------------- */
 
 #include "bgddl.h"
 
@@ -66,6 +97,159 @@
 static int _max_joys = 0;
 static SDL_Joystick * _joysticks[MAX_JOYS];
 static int _selected_joystick = -1;
+
+#ifdef LIBJOY_DIRECT_EVDEV
+#ifndef NBITS
+#define NBITS(x) (((x) + (8 * sizeof(long)) - 1) / (8 * sizeof(long)))
+#endif
+#ifndef test_bit
+#define test_bit(bit, array) ((((const unsigned long*)array)[(bit) / (8 * sizeof(long))] >> ((bit) % (8 * sizeof(long)))) & 1)
+#endif
+
+static void libjoy_rawpad_reset(libjoy_rawpad_t *p) {
+    p->fd = -1;
+    p->nbtn = p->naxis = p->nhat = 0;
+    for (int i = 0; i < LIBJOY_MAX_BTN;  i++) p->buttons[i] = 0;
+    for (int i = 0; i < LIBJOY_MAX_AXIS; i++) p->axes[i] = 0;
+    for (int i = 0; i < LIBJOY_MAX_HAT;  i++) p->hats[i] = SDL_HAT_CENTERED;
+    for (int i = 0; i < KEY_MAX; i++) p->btn_map[i] = -1;
+    for (int i = 0; i < ABS_MAX; i++) { p->abs_map[i] = -1; p->abs_hat[i] = -1; }
+}
+
+/* Scan /dev/input/event* and open every device that looks like a gamepad
+ * (has EV_KEY with at least one BTN_JOYSTICK..BTN_GEAR_UP or BTN_GAMEPAD).
+ * Returns number of opened pads. */
+static int libjoy_scan_pads(void) {
+    int count = 0;
+    for (int n = 0; n < 32 && count < MAX_JOYS; n++) {
+        char path[64];
+        snprintf(path, sizeof(path), "/dev/input/event%d", n);
+        int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+        if (fd < 0) continue;
+
+        unsigned long evbit[NBITS(EV_MAX)]  = {0};
+        unsigned long keybit[NBITS(KEY_MAX)] = {0};
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evbit)), evbit) < 0
+         || !test_bit(EV_KEY, evbit)) { close(fd); continue; }
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit) < 0) {
+            close(fd); continue;
+        }
+
+        int is_pad = 0;
+        for (int k = BTN_JOYSTICK; k <= BTN_GEAR_UP; k++) if (test_bit(k, keybit)) { is_pad = 1; break; }
+        if (!is_pad) { close(fd); continue; }
+
+        libjoy_rawpad_t *p = &_rawpads[count];
+        libjoy_rawpad_reset(p);
+        p->fd = fd;
+
+        /* Map each real KEY bit to a sequential button index in OUR array.
+         * This is the same mapping SDL3 uses (BTN_JOYSTICK=1st, then
+         * BTN_GAMEPAD range, then extras). */
+        int bidx = 0;
+        for (int k = BTN_JOYSTICK; k < BTN_GAMEPAD && bidx < LIBJOY_MAX_BTN; k++) {
+            if (test_bit(k, keybit)) { p->btn_map[k] = bidx++; }
+        }
+        for (int k = BTN_GAMEPAD; k <= BTN_THUMBR && bidx < LIBJOY_MAX_BTN; k++) {
+            if (test_bit(k, keybit)) { p->btn_map[k] = bidx++; }
+        }
+        for (int k = BTN_DPAD_UP; k <= BTN_DPAD_RIGHT && bidx < LIBJOY_MAX_BTN; k++) {
+            if (test_bit(k, keybit)) { p->btn_map[k] = bidx++; }
+        }
+        p->nbtn = bidx;
+
+        /* Absolute axes: map ABS_X/Y/etc to our axes array. ABS_HAT0X/Y go to a hat. */
+        unsigned long absbit[NBITS(ABS_MAX)] = {0};
+        if (ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbit)), absbit) >= 0) {
+            int aidx = 0, hidx = 0;
+            for (int a = 0; a < ABS_MAX; a++) {
+                if (!test_bit(a, absbit)) continue;
+                if (a == ABS_HAT0X || a == ABS_HAT0Y
+                 || a == ABS_HAT1X || a == ABS_HAT1Y
+                 || a == ABS_HAT2X || a == ABS_HAT2Y
+                 || a == ABS_HAT3X || a == ABS_HAT3Y) {
+                    int which_hat = (a - ABS_HAT0X) / 2;
+                    if (which_hat < LIBJOY_MAX_HAT) {
+                        p->abs_hat[a] = which_hat;
+                        if (which_hat + 1 > p->nhat) p->nhat = which_hat + 1;
+                    }
+                    continue;
+                }
+                if (aidx >= LIBJOY_MAX_AXIS) continue;
+                p->abs_map[a] = aidx++;
+                struct input_absinfo info;
+                if (ioctl(fd, EVIOCGABS(a), &info) >= 0) {
+                    p->abs_min[a] = info.minimum;
+                    p->abs_max[a] = info.maximum;
+                    /* init to rest position scaled to SDL range */
+                    int span = info.maximum - info.minimum;
+                    int mid = (info.minimum + info.maximum) / 2;
+                    int scaled = 0;
+                    if (span > 0) scaled = ((info.value - mid) * 2 * 32767) / span;
+                    if (scaled < -32768) scaled = -32768;
+                    if (scaled > 32767) scaled = 32767;
+                    p->axes[p->abs_map[a]] = scaled;
+                }
+            }
+            p->naxis = aidx;
+        }
+
+        char name[128] = "";
+        ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        fprintf(stderr, "[JOY-RAW] opened #%d (%s) from %s — btn=%d axis=%d hat=%d\n",
+            count, name, path, p->nbtn, p->naxis, p->nhat);
+        fflush(stderr);
+        count++;
+    }
+    return count;
+}
+
+static void libjoy_drain_pad(libjoy_rawpad_t *p) {
+    if (p->fd < 0) return;
+    struct input_event ev[32];
+    ssize_t n;
+    while ((n = read(p->fd, ev, sizeof(ev))) > 0) {
+        int k = n / sizeof(ev[0]);
+        for (int i = 0; i < k; i++) {
+            struct input_event *e = &ev[i];
+            if (e->type == EV_KEY && e->code < KEY_MAX) {
+                int idx = p->btn_map[e->code];
+                if (idx >= 0 && idx < LIBJOY_MAX_BTN) {
+                    p->buttons[idx] = e->value ? 1 : 0;
+                }
+            } else if (e->type == EV_ABS && e->code < ABS_MAX) {
+                if (p->abs_hat[e->code] >= 0) {
+                    int h = p->abs_hat[e->code];
+                    int is_x = ((e->code - ABS_HAT0X) & 1) == 0;
+                    int cur = p->hats[h];
+                    if (is_x) {
+                        cur &= ~(SDL_HAT_LEFT | SDL_HAT_RIGHT);
+                        if (e->value < 0) cur |= SDL_HAT_LEFT;
+                        else if (e->value > 0) cur |= SDL_HAT_RIGHT;
+                    } else {
+                        cur &= ~(SDL_HAT_UP | SDL_HAT_DOWN);
+                        if (e->value < 0) cur |= SDL_HAT_UP;
+                        else if (e->value > 0) cur |= SDL_HAT_DOWN;
+                    }
+                    p->hats[h] = cur;
+                } else {
+                    int idx = p->abs_map[e->code];
+                    if (idx >= 0) {
+                        int mn = p->abs_min[e->code], mx = p->abs_max[e->code];
+                        int span = mx - mn;
+                        int mid = (mn + mx) / 2;
+                        int scaled = 0;
+                        if (span > 0) scaled = ((e->value - mid) * 2 * 32767) / span;
+                        if (scaled < -32768) scaled = -32768;
+                        if (scaled > 32767) scaled = 32767;
+                        p->axes[idx] = scaled;
+                    }
+                }
+            }
+        }
+    }
+}
+#endif /* LIBJOY_DIRECT_EVDEV */
 
 /* --------------------------------------------------------------------------- */
 /* libjoy_num ()                                                               */
@@ -112,6 +296,9 @@ int libjoy_buttons( void )
 #ifdef TARGET_CAANOO
         if ( _selected_joystick == 0 ) return 21;
 #endif
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) return _rawpads[_selected_joystick].nbtn;
+#endif
         return SDL_GetNumJoystickButtons( _joysticks[ _selected_joystick ] ) ;
     }
     return 0 ;
@@ -126,6 +313,9 @@ int libjoy_axes( void )
 {
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) return _rawpads[_selected_joystick].naxis;
+#endif
         return SDL_GetNumJoystickAxes( _joysticks[ _selected_joystick ] ) ;
     }
     return 0 ;
@@ -173,6 +363,13 @@ int libjoy_get_button( int button )
             }
         }
 #endif
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) {
+            if (button >= 0 && button < _rawpads[_selected_joystick].nbtn)
+                return _rawpads[_selected_joystick].buttons[button];
+            return 0;
+        }
+#endif
         return SDL_GetJoystickButton( _joysticks[ _selected_joystick ], button ) ;
     }
     return 0 ;
@@ -187,6 +384,13 @@ int libjoy_get_position( int axis )
 {
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) {
+            if (axis >= 0 && axis < _rawpads[_selected_joystick].naxis)
+                return _rawpads[_selected_joystick].axes[axis];
+            return 0;
+        }
+#endif
         return SDL_GetJoystickAxis( _joysticks[ _selected_joystick ], axis ) ;
     }
     return 0 ;
@@ -201,6 +405,9 @@ int libjoy_hats( void )
 {
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) return _rawpads[_selected_joystick].nhat;
+#endif
         return SDL_GetNumJoystickHats( _joysticks[ _selected_joystick ] ) ;
     }
     return 0 ;
@@ -229,6 +436,13 @@ int libjoy_get_hat( int hat )
 {
     if ( _selected_joystick >= 0 && _selected_joystick < _max_joys )
     {
+#ifdef LIBJOY_DIRECT_EVDEV
+        if (_rawpads[_selected_joystick].fd >= 0) {
+            if (hat >= 0 && hat < _rawpads[_selected_joystick].nhat)
+                return _rawpads[_selected_joystick].hats[hat];
+            return SDL_HAT_CENTERED;
+        }
+#endif
         if ( hat >= 0 && hat <= SDL_GetNumJoystickHats( _joysticks[ _selected_joystick ] ) )
         {
             return SDL_GetJoystickHat( _joysticks[ _selected_joystick ], hat ) ;
@@ -477,6 +691,11 @@ void  __bgdexport( libjoy, module_initialize )()
 {
     int i;
 
+#ifdef LIBJOY_DIRECT_EVDEV
+    /* Zero-initialized statics have fd=0 (which is stdin!); mark unused. */
+    for ( i = 0; i < MAX_JOYS; i++ ) _rawpads[i].fd = -1;
+#endif
+
     /* BGD_DISABLE_SDL_JOYSTICK=1 opts out of opening joysticks entirely.
      * Useful when gptokeyb is the ONLY input path (e.g. a port that only
      * reads keyboard via libkey). Most bennugd games — including SORR —
@@ -504,15 +723,22 @@ void  __bgdexport( libjoy, module_initialize )()
 
     /* SDL3: joystick enumeration is driven by udev and is ASYNC from
      * SDL_InitSubSystem. Calling SDL_GetJoysticks immediately after init
-     * returns 0 devices because the first udev scan hasn't landed yet.
-     * Pump the event loop a couple of times with a tiny delay so the
-     * initial add-events are processed and the internal device list is
-     * populated before we enumerate. Without this, bennugd games that
-     * poll libjoy see "no pad" on startup and every JOY_GETBUTTON
-     * returns 0 forever. */
+     * returns 0 devices because the first udev scan hasn't landed yet. */
     SDL_PumpEvents();
     SDL_Delay( 50 );
     SDL_PumpEvents();
+
+#ifdef LIBJOY_DIRECT_EVDEV
+    /* WORKAROUND: SDL3 lib32 (armhf) opens joystick fd but fails to drain
+     * subsequent events — SDL_GetJoystickButton/Axis stays at open-time
+     * values forever. Open the evdev devices ourselves and keep our own
+     * state arrays; all libjoy_* getters prefer our cache when available. */
+    {
+        int n = libjoy_scan_pads();
+        fprintf(stderr, "[JOY-RAW] direct evdev: %d gamepad(s) opened\n", n);
+        fflush(stderr);
+    }
+#endif
 
     /* Open all joysticks (SDL3: enumerate by instance ID) */
     {
@@ -546,6 +772,21 @@ void  __bgdexport( libjoy, module_initialize )()
 
     SDL_UpdateJoysticks() ;
 
+#ifdef LIBJOY_DIRECT_EVDEV
+    /* If direct evdev opened any pads, expose them as _max_joys
+     * regardless of what SDL reported. This way the game sees the
+     * joysticks even when SDL3 lib32 fails to enumerate them. */
+    {
+        int raw_count = 0;
+        for (int j = 0; j < MAX_JOYS; j++) if (_rawpads[j].fd >= 0) raw_count++;
+        if (raw_count > _max_joys) _max_joys = raw_count;
+    }
+#endif
+
+    /* Auto-select first available pad so games that don't call
+     * joy_select() explicitly still see input. */
+    if (_selected_joystick < 0 && _max_joys > 0) _selected_joystick = 0;
+
 skip_joystick_init: ;
 
 #ifdef TARGET_CAANOO
@@ -576,6 +817,11 @@ void  __bgdexport( libjoy, module_finalize )()
 
     if ( SDL_WasInit( SDL_INIT_JOYSTICK ) ) SDL_QuitSubSystem( SDL_INIT_JOYSTICK );
 
+#ifdef LIBJOY_DIRECT_EVDEV
+    for ( i = 0; i < MAX_JOYS; i++ ) {
+        if (_rawpads[i].fd >= 0) { close(_rawpads[i].fd); _rawpads[i].fd = -1; }
+    }
+#endif
 }
 
 /* ----------------------------------------------------------------- */
@@ -591,6 +837,14 @@ static void __libjoy_first_input_diag(void)
      * SDL_PumpEvents alone doesn't seem to pick up evdev joystick events
      * reliably — explicitly kick SDL_UpdateJoysticks. */
     SDL_UpdateJoysticks();
+
+#ifdef LIBJOY_DIRECT_EVDEV
+    /* Drain raw evdev events into our own state arrays (workaround for
+     * SDL3 lib32 not delivering joystick events). */
+    for (int j = 0; j < MAX_JOYS; j++) {
+        if (_rawpads[j].fd >= 0) libjoy_drain_pad(&_rawpads[j]);
+    }
+#endif
 
     static int first_btn_logged[16] = {0};
     static int first_axis_logged[16] = {0};
