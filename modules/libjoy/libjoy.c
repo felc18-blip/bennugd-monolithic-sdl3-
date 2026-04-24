@@ -587,8 +587,14 @@ void  __bgdexport( libjoy, module_finalize )()
  * the event loop or device open is broken. */
 static void __libjoy_first_input_diag(void)
 {
+    /* Force SDL3 to re-read joystick fds every frame. On lib32 builds
+     * SDL_PumpEvents alone doesn't seem to pick up evdev joystick events
+     * reliably — explicitly kick SDL_UpdateJoysticks. */
+    SDL_UpdateJoysticks();
+
     static int first_btn_logged[16] = {0};
     static int first_axis_logged[16] = {0};
+    static int tick = 0;
     int j;
     for (j = 0; j < _max_joys && j < 16; j++) {
         if (!_joysticks[j]) continue;
@@ -609,6 +615,18 @@ static void __libjoy_first_input_diag(void)
                 first_axis_logged[j] = 1;
             }
         }
+    }
+    /* Also dump every ~120 hook calls whether any button is pressed, so
+     * we can see whether state is being refreshed at all. */
+    if ((tick++ % 120) == 0 && _max_joys > 0 && _joysticks[0]) {
+        int nbtn = SDL_GetNumJoystickButtons(_joysticks[0]);
+        int pressed_count = 0;
+        for (int b = 0; b < nbtn; b++) {
+            if (SDL_GetJoystickButton(_joysticks[0], b)) pressed_count++;
+        }
+        fprintf(stderr, "[JOY] heartbeat: joy#0 pressed=%d/%d  axis0=%d\n",
+            pressed_count, nbtn, SDL_GetJoystickAxis(_joysticks[0], 0));
+        fflush(stderr);
     }
 }
 
