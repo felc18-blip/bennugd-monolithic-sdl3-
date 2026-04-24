@@ -453,13 +453,24 @@ static void process_key_events()
     /* Reset ascii and scancode if last key was released... */
     /* must check all the linked equivs */
 
+    /* libkey was checking SDL3's internal keystate (returned by
+     * SDL_GetKeyboardState) to decide whether the last reported SCAN_CODE
+     * should still be reported as held. That breaks completely when our
+     * libsdlhandler direct-evdev path is the one pushing events into the
+     * queue — SDL_PushEvent does NOT update the keystate array, so the
+     * check always reads "released" and SCANCODE gets zeroed every single
+     * frame. The game only saw key presses for a fraction of a frame.
+     *
+     * Track key state ourselves from KEY_DOWN / KEY_UP events. */
+    static unsigned char our_keystate[SDL_SCANCODE_COUNT];
     pressed = 0 ;
     if ( GLODWORD( libkey,  SCANCODE ) )
     {
         curr = &key_table[GLODWORD( libkey,  SCANCODE )] ;
         while ( curr != NULL && pressed == 0 )
         {
-            if ( keystate[curr->sdlk_equiv] ) pressed = 1 ;
+            int sc = curr->sdlk_equiv;
+            if (sc >= 0 && sc < SDL_SCANCODE_COUNT && our_keystate[sc]) pressed = 1;
             curr = curr->next ;
         }
     }
@@ -472,6 +483,10 @@ static void process_key_events()
 
     while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP ) > 0 )
     {
+        /* Maintain our own keystate from each event we drain. */
+        if (e.key.scancode >= 0 && e.key.scancode < SDL_SCANCODE_COUNT) {
+            our_keystate[e.key.scancode] = (e.type == SDL_EVENT_KEY_DOWN) ? 1 : 0;
+        }
         SDL_Log("[libkey] type=0x%x scancode=%d key=0x%x mod=0x%x", e.type, e.key.scancode, e.key.key, e.key.mod);
         switch ( e.type )
         {
