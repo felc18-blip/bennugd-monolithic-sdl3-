@@ -477,21 +477,20 @@ void  __bgdexport( libjoy, module_initialize )()
 {
     int i;
 
-    /* Skip SDL joystick init on Amlogic Mali FBDEV by default. PortMaster
-     * ports feed bennugd via gptokeyb (joy -> kbd through uinput), and
-     * SDL3 libjoy also opening the same /dev/input/eventN for the pad
-     * races gptokeyb on read(), losing events. Override with
-     * BGD_DISABLE_SDL_JOYSTICK=0 if you need the libjoy path. */
+    /* BGD_DISABLE_SDL_JOYSTICK=1 opts out of opening joysticks entirely.
+     * Useful when gptokeyb is the ONLY input path (e.g. a port that only
+     * reads keyboard via libkey). Most bennugd games — including SORR —
+     * actually poll libjoy directly via JOY_GETBUTTON/JOY_GETAXIS, so the
+     * default MUST be "open the joystick". Previously this defaulted to
+     * skipping on the 'mali' video driver (to avoid a theoretical race
+     * with gptokeyb reading the same /dev/input/eventN), but that broke
+     * every joystick-polling game on Amlogic FBDEV. The keyboard-path
+     * race is now prevented by libsdlhandler's EVIOCGRAB, so there's no
+     * reason to also block libjoy. */
     {
         const char *opt = SDL_getenv("BGD_DISABLE_SDL_JOYSTICK");
-        int skip = 0;
-        if (opt) skip = (opt[0] != '0' && opt[0] != 'n' && opt[0] != 'N');
-        else {
-            const char *vd = SDL_GetCurrentVideoDriver();
-            if (vd && SDL_strcmp(vd, "mali") == 0) skip = 1;
-        }
-        if (skip) {
-            SDL_Log("libjoy: SDL joystick init skipped (gptokeyb path assumed)");
+        if (opt && opt[0] != '0' && opt[0] != 'n' && opt[0] != 'N') {
+            SDL_Log("libjoy: SDL joystick init skipped (BGD_DISABLE_SDL_JOYSTICK set)");
             _max_joys = 0;
             goto skip_joystick_init;
         }
