@@ -1,7 +1,7 @@
 /*
- *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright © 2002-2006 Fenix Team (Fenix)
- *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
+ *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
+ *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -353,7 +353,7 @@ char * __bgdexport( libkey, globals_def ) =
 
 DLVARFIXUP  __bgdexport( libkey, globals_fixup )[] =
 {
-    /* Nombre de variable global, puntero al dato, tamaño del elemento, cantidad de elementos */
+    /* Nombre de variable global, puntero al dato, tamaï¿½o del elemento, cantidad de elementos */
     { "shift_status" , NULL, -1, -1 },
     { "ascii"        , NULL, -1, -1 },
     { "scan_code"    , NULL, -1, -1 },
@@ -417,6 +417,18 @@ void hotkey_add( int mod, int sym, HOTKEY_CALLBACK callback )
 
 static void process_key_events()
 {
+    static int kbd_logged = 0;
+    if (!kbd_logged) {
+        kbd_logged = 1;
+        int nkbd = 0;
+        SDL_KeyboardID *kbds = SDL_GetKeyboards(&nkbd);
+        SDL_Log("[libkey] SDL_GetKeyboards = %d keyboards", nkbd);
+        for (int i = 0; i < nkbd; i++) {
+            const char *name = SDL_GetKeyboardNameForID(kbds[i]);
+            SDL_Log("[libkey]   kbd[%d] id=%u name=%s", i, (unsigned)kbds[i], name ? name : "(null)");
+        }
+        if (kbds) SDL_free(kbds);
+    }
     SDL_Event e ;
     SDL_Keymod m ;
     int k, asc ;
@@ -460,6 +472,7 @@ static void process_key_events()
 
     while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP ) > 0 )
     {
+        SDL_Log("[libkey] type=0x%x scancode=%d key=0x%x mod=0x%x", e.type, e.key.scancode, e.key.key, e.key.mod);
         switch ( e.type )
         {
             case SDL_EVENT_KEY_DOWN:
@@ -478,7 +491,7 @@ static void process_key_events()
 
                 if ( ignore_key ) break ;
 
-                /* Almacena la pulsación de la tecla */
+                /* Almacena la pulsaciï¿½n de la tecla */
                 k = sdl_equiv[e.key.scancode];
 
                 m = e.key.mod ;

@@ -477,6 +477,18 @@ void  __bgdexport( libjoy, module_initialize )()
 {
     int i;
 
+    /* Skip SDL joystick init when a gptokeyb virtual keyboard is expected
+     * (PortMaster ports use gptokeyb to translate joy -> kbd, and bennugd
+     * runs those games purely via libkey; if BOTH SDL3 and gptokeyb read
+     * the same /dev/input/eventN for the physical pad, they race on
+     * read(), losing events. Set BGD_DISABLE_SDL_JOYSTICK=1 to opt out). */
+    if ( SDL_getenv( "BGD_DISABLE_SDL_JOYSTICK" ) )
+    {
+        SDL_Log("libjoy: SDL joystick init skipped (BGD_DISABLE_SDL_JOYSTICK set)");
+        _max_joys = 0;
+        goto skip_joystick_init;
+    }
+
     if ( !SDL_WasInit( SDL_INIT_JOYSTICK ) )
     {
         SDL_InitSubSystem( SDL_INIT_JOYSTICK );
@@ -501,6 +513,8 @@ void  __bgdexport( libjoy, module_initialize )()
     }
 
     SDL_UpdateJoysticks() ;
+
+skip_joystick_init: ;
 
 #ifdef TARGET_CAANOO
     KIONIX_ACCEL_init();

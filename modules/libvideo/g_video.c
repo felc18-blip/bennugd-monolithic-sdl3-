@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <dlfcn.h>
 
 #include "bgdrtm.h"
 
@@ -54,6 +55,8 @@ SDL_Renderer * renderer = NULL;
 SDL_Texture * texture = NULL;
 
 char * apptitle = NULL ;
+
+static char g_mali_lib_path[256] = "";
 
 int scr_width = 320 ;
 int scr_height = 240 ;
@@ -356,23 +359,15 @@ int gr_set_mode( int width, int height, int depth )
         SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengles2");
         {
             const char *vd = SDL_GetCurrentVideoDriver();
-            if (vd && SDL_strcmp(vd, "mali") == 0) {
-                const char *candidates[] = {
-                    "/usr/lib32/libMali.so",
-                    "/usr/lib/libMali.so",
-                    NULL
-                };
-                int i;
-                for (i = 0; candidates[i]; i++) {
-                    if (access(candidates[i], R_OK) == 0) {
-                        if (!SDL_getenv("SDL_OPENGL_LIBRARY"))
-                            SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, candidates[i]);
-                        if (!SDL_getenv("SDL_EGL_LIBRARY"))
-                            SDL_SetHint(SDL_HINT_EGL_LIBRARY, candidates[i]);
-                        SDL_Log("Mali FBDEV: hinting GL/EGL lib at %s", candidates[i]);
-                        break;
-                    }
-                }
+            if (vd && SDL_strcmp(vd, "mali") == 0 && g_mali_lib_path[0]) {
+                /* Point SDL3 at the same libMali we successfully pre-loaded,
+                 * so its later dlopen() for GLES/EGL finds the already-loaded
+                 * copy instead of re-opening an EXECSTACK-tainted path. */
+                if (!SDL_getenv("SDL_OPENGL_LIBRARY"))
+                    SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, g_mali_lib_path);
+                if (!SDL_getenv("SDL_EGL_LIBRARY"))
+                    SDL_SetHint(SDL_HINT_EGL_LIBRARY, g_mali_lib_path);
+                SDL_Log("Mali FBDEV: hinting GL/EGL lib at %s", g_mali_lib_path);
             }
         }
         sdl_flags = SDL_WINDOW_OPENGL;
@@ -561,6 +556,50 @@ int gr_init( int width, int height )
 void __bgdexport( libvideo, module_initialize )()
 {
     char * e;
+
+    /* Pre-load libMali/libudev with RTLD_GLOBAL so SDL3's later dlopen()s
+     * see them already loaded with global symbol visibility.
+     *
+     * On Amlogic-old the stock /usr/lib32/libMali.so has PT_GNU_STACK=RWX,
+     * and modern kernels refuse dlopen() with "cannot enable executable
+     * stack". A patched copy at /storage/mali-fixed/libMali.so (EXECSTACK
+     * cleared) is tried first for runtime tests; the permanent fix lives
+     * in opengl-meson/package.mk which patches the libs at install time. */
+    g_mali_lib_path[0] = '\0';
+    {
+        const char *mali_candidates[] = {
+            "/usr/lib32/libMali.so",
+            "/usr/lib/libMali.so",
+            NULL
+        };
+        const char *udev_candidates[] = {
+            "/usr/lib32/libudev.so.1",
+            "/usr/lib/libudev.so.1",
+            "libudev.so.1",
+            NULL
+        };
+        int i;
+        for (i = 0; mali_candidates[i]; i++) {
+            if (access(mali_candidates[i], R_OK) != 0) continue;
+            void *h = dlopen(mali_candidates[i], RTLD_NOW | RTLD_GLOBAL);
+            if (h) {
+                SDL_Log("libvideo: pre-loaded %s RTLD_GLOBAL", mali_candidates[i]);
+                strncpy(g_mali_lib_path, mali_candidates[i], sizeof(g_mali_lib_path) - 1);
+                break;
+            } else {
+                const char *e = dlerror();
+                SDL_Log("libvideo: dlopen(%s) failed: %s", mali_candidates[i], e ? e : "(null)");
+            }
+        }
+        for (i = 0; udev_candidates[i]; i++) {
+            if (udev_candidates[i][0] == '/' && access(udev_candidates[i], R_OK) != 0) continue;
+            void *h = dlopen(udev_candidates[i], RTLD_NOW | RTLD_GLOBAL);
+            if (h) {
+                SDL_Log("libvideo: pre-loaded %s RTLD_GLOBAL", udev_candidates[i]);
+                break;
+            }
+        }
+    }
 
     if ( !SDL_WasInit( SDL_INIT_VIDEO ) ) SDL_InitSubSystem( SDL_INIT_VIDEO );
 
