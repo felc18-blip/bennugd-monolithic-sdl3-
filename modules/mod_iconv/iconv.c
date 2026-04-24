@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <SDL/SDL_stdinc.h>
+#include <SDL3/SDL_stdinc.h>
 /* Bennu specifics */
 #include <xstrings.h>
 #include <bgddl.h>

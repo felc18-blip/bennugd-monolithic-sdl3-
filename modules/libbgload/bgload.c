@@ -28,7 +28,7 @@
 
 #include "xstrings.h"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #include "bgload.h"
 

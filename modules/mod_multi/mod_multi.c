@@ -28,7 +28,8 @@
 #include <libvideo.h>
 #include <g_video.h>
 #include <libmouse_symbols.h>
-#include <SDL.h>
+#include <stdbool.h>
+#include <SDL3/SDL.h>
 #include "bgddl.h"
 #include "dlvaracc.h"
 
@@ -39,7 +40,7 @@
 /* --------------------------------------------------------------------------- */
 
 typedef struct {
-    SDL_bool active;
+    bool active;
     int x;
     int y;
     int pressure;
@@ -72,7 +73,7 @@ int get_sdlfinger_index(SDL_FingerID finger) {
 
     // ID not found, try to find a free spot
     for(n=0; n<MAX_POINTERS; n++) {
-        if(pointers[n].active == SDL_FALSE) {
+        if(pointers[n].active == false) {
             return n;
         }
     }
@@ -81,9 +82,20 @@ int get_sdlfinger_index(SDL_FingerID finger) {
     return -1;
 }
 
-/* Process SDL events looking for multitouch-related ones */
+/* Process SDL events looking for multitouch-related ones.
+ * Note: disabled since 2019 (body starts with `return;`). The SDL3
+ * port keeps this as a no-op stub to avoid porting dead multitouch code
+ * (SDL_FINGER* events, SDL_GetNumTouchFingers, etc.) whose API changed
+ * significantly and isn't exercised at runtime anyway. */
 void parse_input_events() {
     return;
+}
+
+#if 0
+/* Original (disabled) multitouch event handler, preserved for reference.
+ * Uses SDL2 API shapes (SDL_FINGERDOWN, fingerId, SDL_GetNumTouchFingers)
+ * and would need porting to SDL3 if re-enabled. */
+void parse_input_events_legacy_SDL2() {
     int n=0;
     float x=0.0, y=0.0;
     double width=0, height=0;
@@ -130,7 +142,7 @@ void parse_input_events() {
                 numpointers = SDL_GetNumTouchFingers(e.tfinger.touchId);
                 // Store the data about this finger's position
                 pointers[n].fingerid = e.tfinger.fingerId;
-                pointers[n].active = SDL_TRUE;
+                pointers[n].active = true;
                 x = e.tfinger.x * width;
                 y = e.tfinger.y * height;
                 pointers[n].pressure = (float)e.tfinger.pressure * 255;
@@ -188,7 +200,7 @@ void parse_input_events() {
                     break;
 
                 // Remove the data about this finger's position
-                pointers[n].active = SDL_FALSE;
+                pointers[n].active = false;
                 pointers[n].pressure = 0.0;
 
                 // Fake a mouse release, but only for the first pointer and
@@ -202,6 +214,7 @@ void parse_input_events() {
         }
     }
 }
+#endif /* 0 — legacy SDL2 multitouch disabled */
 
 // Return the total number of active pointers
 static int modmulti_numpointers(INSTANCE * my, int * params) {
@@ -228,7 +241,7 @@ static int modmulti_info(INSTANCE * my, int * params) {
     } else if(strncasecmp(info, "PRESSURE", 8) == 0) {
         return pointers[n].pressure;
     } else if(strncasecmp(info, "ACTIVE", 6) == 0) {
-        if(pointers[n].active == SDL_TRUE) {
+        if(pointers[n].active == true) {
             return 1;
         } else {
 

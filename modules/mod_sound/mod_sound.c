@@ -36,7 +36,7 @@
 
 #include "bgddl.h"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #include "SDL_mixer.h"
 

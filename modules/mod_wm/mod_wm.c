@@ -37,7 +37,7 @@
 #include "libgrbase.h"
 #include "libvideo.h"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #if defined( WIN32 ) || ( __linux && ( defined( SDL_VIDEO_DRIVER_X11 ) ) )
 #include <SDL_syswm.h>

@@ -30,7 +30,7 @@
 #define __JOY_H
 
 #include <bgddl.h>
-#include <SDL_joystick.h>
+#include <SDL3/SDL_joystick.h>
 
 #ifdef __BGDC__
 /* --------------------------------------------------------------------------- */

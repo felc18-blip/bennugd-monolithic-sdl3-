@@ -74,7 +74,7 @@
 #endif
 
 #include "bgddl.h"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 /*
  * Dynamic memory

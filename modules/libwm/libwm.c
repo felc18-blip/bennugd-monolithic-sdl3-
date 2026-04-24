@@ -28,7 +28,7 @@
 
 /* --------------------------------------------------------------------------- */
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #define __LIB_RENDER
 #include <g_video.h>

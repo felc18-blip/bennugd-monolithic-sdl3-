@@ -27,7 +27,7 @@
 #include <xstrings.h>
 #include <bgdrtm.h>
 #include <curl/curl.h>
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #ifndef MAX_DOWNLOADS
 #define MAX_DOWNLOADS 16

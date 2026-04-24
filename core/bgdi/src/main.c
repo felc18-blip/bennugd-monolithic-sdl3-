@@ -46,9 +46,9 @@
 #include "dirs.h"
 
 #if defined(TARGET_IOS)
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #elif defined(TARGET_WII)
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <fat.h>
 #elif defined(TARGET_PSP)
 #include "psp.h"
