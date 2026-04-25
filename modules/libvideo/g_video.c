@@ -426,7 +426,7 @@ int gr_set_mode( int width, int height, int depth )
         /* SDL3: SDL_SetRenderLogicalPresentation (was SDL_RenderSetLogicalSize);
          * LETTERBOX mode preserves aspect ratio. SDL_HINT_RENDER_SCALE_QUALITY
          * was removed — scale mode is per-texture now (default linear). */
-        SDL_SetRenderLogicalPresentation(renderer, width, height, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderLogicalPresentation(renderer, width, height, SDL_LOGICAL_PRESENTATION_STRETCH);
     }
 
     // This way we can force only one of the sizes (or both) to be native
