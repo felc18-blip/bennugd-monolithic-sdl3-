@@ -1,7 +1,7 @@
 /*
- *  Copyright ï¿½ 2006-2012 SplinterGU (Fenix/Bennugd)
- *  Copyright ï¿½ 2002-2006 Fenix Team (Fenix)
- *  Copyright ï¿½ 1999-2002 Josï¿½ Luis Cebriï¿½n Pagï¿½e (Fenix)
+ *  Copyright © 2006-2012 SplinterGU (Fenix/Bennugd)
+ *  Copyright © 2002-2006 Fenix Team (Fenix)
+ *  Copyright © 1999-2002 José Luis Cebrián Pagüe (Fenix)
  *
  *  This file is part of Bennu - Game Development
  *
@@ -353,7 +353,7 @@ char * __bgdexport( libkey, globals_def ) =
 
 DLVARFIXUP  __bgdexport( libkey, globals_fixup )[] =
 {
-    /* Nombre de variable global, puntero al dato, tamaï¿½o del elemento, cantidad de elementos */
+    /* Nombre de variable global, puntero al dato, tamaño del elemento, cantidad de elementos */
     { "shift_status" , NULL, -1, -1 },
     { "ascii"        , NULL, -1, -1 },
     { "scan_code"    , NULL, -1, -1 },
@@ -417,18 +417,6 @@ void hotkey_add( int mod, int sym, HOTKEY_CALLBACK callback )
 
 static void process_key_events()
 {
-    static int kbd_logged = 0;
-    if (!kbd_logged) {
-        kbd_logged = 1;
-        int nkbd = 0;
-        SDL_KeyboardID *kbds = SDL_GetKeyboards(&nkbd);
-        SDL_Log("[libkey] SDL_GetKeyboards = %d keyboards", nkbd);
-        for (int i = 0; i < nkbd; i++) {
-            const char *name = SDL_GetKeyboardNameForID(kbds[i]);
-            SDL_Log("[libkey]   kbd[%d] id=%u name=%s", i, (unsigned)kbds[i], name ? name : "(null)");
-        }
-        if (kbds) SDL_free(kbds);
-    }
     SDL_Event e ;
     SDL_Keymod m ;
     int k, asc ;
@@ -453,24 +441,13 @@ static void process_key_events()
     /* Reset ascii and scancode if last key was released... */
     /* must check all the linked equivs */
 
-    /* libkey was checking SDL3's internal keystate (returned by
-     * SDL_GetKeyboardState) to decide whether the last reported SCAN_CODE
-     * should still be reported as held. That breaks completely when our
-     * libsdlhandler direct-evdev path is the one pushing events into the
-     * queue â€” SDL_PushEvent does NOT update the keystate array, so the
-     * check always reads "released" and SCANCODE gets zeroed every single
-     * frame. The game only saw key presses for a fraction of a frame.
-     *
-     * Track key state ourselves from KEY_DOWN / KEY_UP events. */
-    static unsigned char our_keystate[SDL_SCANCODE_COUNT];
     pressed = 0 ;
     if ( GLODWORD( libkey,  SCANCODE ) )
     {
         curr = &key_table[GLODWORD( libkey,  SCANCODE )] ;
         while ( curr != NULL && pressed == 0 )
         {
-            int sc = curr->sdlk_equiv;
-            if (sc >= 0 && sc < SDL_SCANCODE_COUNT && our_keystate[sc]) pressed = 1;
+            if ( keystate[curr->sdlk_equiv] ) pressed = 1 ;
             curr = curr->next ;
         }
     }
@@ -483,11 +460,6 @@ static void process_key_events()
 
     while ( SDL_PeepEvents( &e, 1, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP ) > 0 )
     {
-        /* Maintain our own keystate from each event we drain. */
-        if (e.key.scancode >= 0 && e.key.scancode < SDL_SCANCODE_COUNT) {
-            our_keystate[e.key.scancode] = (e.type == SDL_EVENT_KEY_DOWN) ? 1 : 0;
-        }
-        SDL_Log("[libkey] type=0x%x scancode=%d key=0x%x mod=0x%x", e.type, e.key.scancode, e.key.key, e.key.mod);
         switch ( e.type )
         {
             case SDL_EVENT_KEY_DOWN:
@@ -506,7 +478,7 @@ static void process_key_events()
 
                 if ( ignore_key ) break ;
 
-                /* Almacena la pulsaciï¿½n de la tecla */
+                /* Almacena la pulsación de la tecla */
                 k = sdl_equiv[e.key.scancode];
 
                 m = e.key.mod ;

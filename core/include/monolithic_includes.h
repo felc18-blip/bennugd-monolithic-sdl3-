@@ -236,7 +236,7 @@ basic_symbols symbol_list[] =
 extra_symbols symbol_list_runtime[] =
 {
     { NULL, NULL, libsdlhandler_module_initialize, libsdlhandler_module_finalize, NULL, NULL, NULL, libsdlhandler_handler_hooks },      //libsdlhandler
-    { NULL, NULL, libjoy_module_initialize, libjoy_module_finalize, NULL, NULL, NULL, libjoy_handler_hooks }, //libjoy
+    { NULL, NULL, libjoy_module_initialize, libjoy_module_finalize, NULL, NULL, NULL, NULL }, //libjoy
     { libgrbase_globals_fixup, NULL, libgrbase_module_initialize, NULL, NULL, NULL, NULL, NULL }, //libgrbase
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }, //libblit
     { libvideo_globals_fixup, NULL, libvideo_module_initialize, libvideo_module_finalize, NULL, NULL, NULL, NULL }, //libvideo
